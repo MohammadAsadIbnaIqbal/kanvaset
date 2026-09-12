@@ -355,6 +355,10 @@ export function useWebSocketBoard({ boardId, token, currentUser }: UseWebSocketB
 
             case "ERROR": {
               setLastError(msg.payload?.detail || "Operation error");
+              sendMessage({
+                type: "SYNC_REQUEST",
+                board_id: boardId,
+              });
               break;
             }
           }

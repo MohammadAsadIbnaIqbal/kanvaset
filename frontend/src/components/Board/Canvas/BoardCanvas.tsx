@@ -67,9 +67,15 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
     height: 0,
   });
 
+  // Drawing Object (Drag to size)
+  const [isDrawingObject, setIsDrawingObject] = useState(false);
+  const drawingStartMouseRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [draftObject, setDraftObject] = useState<Partial<BoardObject> | null>(null);
+
   // Inline Text Editing
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const textUpdateTimeoutRef = useRef<any>(null);
 
   const isViewer = role === "VIEWER";
 
@@ -149,26 +155,47 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
 
     // If creating a new shape
     if (activeTool !== "select" && !isViewer) {
-      const id = `obj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-      const w = activeTool === "sticky_note" ? 180 : activeTool === "circle" ? 140 : activeTool === "connector" ? 220 : 160;
-      const h = activeTool === "sticky_note" ? 180 : activeTool === "circle" ? 140 : activeTool === "connector" ? 40 : 100;
+      if (activeTool === "rectangle" || activeTool === "circle" || activeTool === "connector") {
+        setIsDrawingObject(true);
+        drawingStartMouseRef.current = { x: bCoord.x, y: bCoord.y };
+        const id = `obj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+        setDraftObject({
+          id,
+          type: activeTool,
+          x: bCoord.x,
+          y: bCoord.y,
+          width: 0,
+          height: 0,
+          color: selectedColor,
+          fill: activeTool === "connector" ? "transparent" : "#1e293b",
+          stroke: "#6366f1",
+          stroke_width: 2,
+          text: ""
+        });
+        return;
+      } else {
+        // Sticky note or text are click-to-place
+        const id = `obj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+        const w = activeTool === "sticky_note" ? 180 : 160;
+        const h = activeTool === "sticky_note" ? 180 : 100;
 
-      onCreateObject({
-        id,
-        type: activeTool,
-        x: Math.round(bCoord.x - w / 2),
-        y: Math.round(bCoord.y - h / 2),
-        width: w,
-        height: h,
-        color: activeTool === "sticky_note" ? selectedColor : "#ffffff",
-        fill: activeTool === "sticky_note" ? selectedColor : "#1e293b",
-        stroke: activeTool === "sticky_note" ? "transparent" : "#6366f1",
-        stroke_width: 2,
-        text: activeTool === "sticky_note" ? "New Idea" : activeTool === "text" ? "Type something..." : "",
-      });
-      onSelectObject(id);
-      onSelectTool?.("select");
-      return;
+        onCreateObject({
+          id,
+          type: activeTool,
+          x: Math.round(bCoord.x - w / 2),
+          y: Math.round(bCoord.y - h / 2),
+          width: w,
+          height: h,
+          color: activeTool === "sticky_note" ? selectedColor : "#ffffff",
+          fill: activeTool === "sticky_note" ? selectedColor : "#1e293b",
+          stroke: activeTool === "sticky_note" ? "transparent" : "#6366f1",
+          stroke_width: 2,
+          text: activeTool === "sticky_note" ? "New Idea" : "Type something...",
+        });
+        onSelectObject(id);
+        onSelectTool?.("select");
+        return;
+      }
     }
 
     // Clicking empty canvas clears selection and ends text editing
@@ -192,6 +219,17 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
         y: startPanPosRef.current.y + dy,
       });
       return;
+    }
+
+    if (isDrawingObject && draftObject && !isViewer) {
+       const w = Math.abs(bCoord.x - drawingStartMouseRef.current.x);
+       const h = Math.abs(bCoord.y - drawingStartMouseRef.current.y);
+       const nx = Math.min(bCoord.x, drawingStartMouseRef.current.x);
+       const ny = Math.min(bCoord.y, drawingStartMouseRef.current.y);
+       
+       // Snap connector to some reasonable thickness if we don't want a bounding box
+       setDraftObject(prev => ({...prev, width: w, height: h, x: nx, y: ny}));
+       return;
     }
 
     if (isDraggingObject && selectedObjectId && !isViewer) {
@@ -242,6 +280,17 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
 
   // Mouse Up
   const handleMouseUp = () => {
+    if (isDrawingObject && draftObject && !isViewer) {
+        setIsDrawingObject(false);
+        if (draftObject.width! > 10 || draftObject.height! > 10) {
+            onCreateObject(draftObject as any);
+            onSelectObject(draftObject.id!);
+        }
+        setDraftObject(null);
+        onSelectTool?.("select");
+        return;
+    }
+
     if (isDraggingObject && selectedObjectId && currentDragPosRef.current && !isViewer) {
       onMoveObject(selectedObjectId, currentDragPosRef.current.x, currentDragPosRef.current.y);
       currentDragPosRef.current = null;
@@ -253,10 +302,9 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
 
   // Select object & start dragging
   const handleObjectMouseDown = (e: React.MouseEvent, obj: BoardObject) => {
+    if (isViewer || spacePressed || activeTool === "pan") return; // Let it bubble up for panning
+    
     e.stopPropagation();
-
-    if (isViewer || spacePressed || activeTool === "pan") return;
-
     onSelectObject(obj.id);
     setIsDraggingObject(true);
     dragStartMouseRef.current = { x: e.clientX, y: e.clientY };
@@ -270,6 +318,22 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
 
     setEditingId(obj.id);
     setEditText(obj.text || "");
+  };
+
+  const handleTextChange = (objId: string, newText: string) => {
+    setEditText(newText);
+    if (textUpdateTimeoutRef.current) {
+      clearTimeout(textUpdateTimeoutRef.current);
+    }
+    textUpdateTimeoutRef.current = setTimeout(() => {
+      onUpdateObject(objId, { text: newText });
+    }, 200);
+  };
+
+  const handleTextBlur = (objId: string) => {
+    if (textUpdateTimeoutRef.current) clearTimeout(textUpdateTimeoutRef.current);
+    onUpdateObject(objId, { text: editText });
+    setEditingId(null);
   };
 
   // Resize handle drag start
@@ -286,6 +350,8 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
       height: obj.height,
     };
   };
+
+  const renderObjects = draftObject ? [...objects, draftObject as BoardObject] : objects;
 
   return (
     <div
@@ -311,7 +377,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
         className="absolute inset-0 pointer-events-none"
       >
         {/* Board Objects */}
-        {objects.map((obj) => {
+        {renderObjects.map((obj) => {
           const isSelected = selectedObjectId === obj.id;
           const isEditing = editingId === obj.id;
 
@@ -332,7 +398,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
               {obj.type === "sticky_note" && (
                 <div
                   style={{ backgroundColor: obj.color || "#FEF08A" }}
-                  className="w-full h-full rounded-xl p-4 shadow-xl border border-black/10 flex flex-col overflow-hidden text-slate-900"
+                  className="w-full h-full rounded-xl p-4 shadow-xl border border-black/10 flex flex-col overflow-hidden "
                 >
                   {isEditing ? (
                     <textarea
@@ -341,15 +407,12 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}
-                      onChange={(e) => setEditText(e.target.value)}
-                      onBlur={() => {
-                        onUpdateObject(obj.id, { text: editText });
-                        setEditingId(null);
-                      }}
-                      className="w-full h-full bg-transparent resize-none border-none outline-none font-medium text-sm leading-relaxed"
+                      onChange={(e) => handleTextChange(obj.id, e.target.value)}
+                      onBlur={() => handleTextBlur(obj.id)}
+                      style={{ color: obj.color || "#0f172a" }} className="w-full h-full bg-transparent resize-none border-none outline-none font-medium text-sm leading-relaxed"
                     />
                   ) : (
-                    <div className="w-full h-full font-medium text-sm leading-relaxed whitespace-pre-wrap break-words overflow-hidden">
+                    <div style={{ color: obj.color || "#0f172a" }} className="w-full h-full font-medium text-sm leading-relaxed whitespace-pre-wrap break-words overflow-hidden">
                       {obj.text || "Double-click to write..."}
                     </div>
                   )}
@@ -373,15 +436,12 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}
-                      onChange={(e) => setEditText(e.target.value)}
-                      onBlur={() => {
-                        onUpdateObject(obj.id, { text: editText });
-                        setEditingId(null);
-                      }}
-                      className="w-full h-full bg-transparent resize-none border-none outline-none text-white text-center font-semibold text-sm"
+                      onChange={(e) => handleTextChange(obj.id, e.target.value)}
+                      onBlur={() => handleTextBlur(obj.id)}
+                      style={{ color: obj.color || "#ffffff" }} className="w-full h-full bg-transparent resize-none border-none outline-none text-center font-semibold text-sm"
                     />
                   ) : (
-                    <span className="text-white text-sm font-semibold whitespace-pre-wrap break-words">
+                    <span style={{ color: obj.color || "#ffffff" }} className=" text-sm font-semibold whitespace-pre-wrap break-words">
                       {obj.text}
                     </span>
                   )}
@@ -405,15 +465,12 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}
-                      onChange={(e) => setEditText(e.target.value)}
-                      onBlur={() => {
-                        onUpdateObject(obj.id, { text: editText });
-                        setEditingId(null);
-                      }}
-                      className="w-full h-full bg-transparent resize-none border-none outline-none text-white text-center font-semibold text-sm flex items-center justify-center"
+                      onChange={(e) => handleTextChange(obj.id, e.target.value)}
+                      onBlur={() => handleTextBlur(obj.id)}
+                      style={{ color: obj.color || "#ffffff" }} className="w-full h-full bg-transparent resize-none border-none outline-none text-center font-semibold text-sm flex items-center justify-center"
                     />
                   ) : (
-                    <span className="text-white text-sm font-semibold whitespace-pre-wrap break-words">
+                    <span style={{ color: obj.color || "#ffffff" }} className=" text-sm font-semibold whitespace-pre-wrap break-words">
                       {obj.text}
                     </span>
                   )}
@@ -430,15 +487,12 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}
-                      onChange={(e) => setEditText(e.target.value)}
-                      onBlur={() => {
-                        onUpdateObject(obj.id, { text: editText });
-                        setEditingId(null);
-                      }}
-                      className="w-full h-full bg-transparent resize-none border-none outline-none text-white font-medium text-base leading-relaxed"
+                      onChange={(e) => handleTextChange(obj.id, e.target.value)}
+                      onBlur={() => handleTextBlur(obj.id)}
+                      style={{ color: obj.color || "#ffffff" }} className="w-full h-full bg-transparent resize-none border-none outline-none font-medium text-base leading-relaxed"
                     />
                   ) : (
-                    <div className="text-white font-medium text-base leading-relaxed whitespace-pre-wrap break-words">
+                    <div style={{ color: obj.color || "#ffffff" }} className=" font-medium text-base leading-relaxed whitespace-pre-wrap break-words">
                       {obj.text || "Double-click to edit text"}
                     </div>
                   )}
@@ -479,11 +533,8 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}
-                      onChange={(e) => setEditText(e.target.value)}
-                      onBlur={() => {
-                        onUpdateObject(obj.id, { text: editText });
-                        setEditingId(null);
-                      }}
+                      onChange={(e) => handleTextChange(obj.id, e.target.value)}
+                      onBlur={() => handleTextBlur(obj.id)}
                       className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-900 border border-indigo-500 rounded px-2 py-0.5 text-xs text-white text-center outline-none resize-none"
                     />
                   ) : (
