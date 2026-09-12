@@ -258,6 +258,55 @@ class BoardService:
         ]
 
     @staticmethod
+    async def update_board_member(
+        db: AsyncSession, board_id: str, member_user_id: str, role: str, current_user_id: str
+    ):
+        current_role = await BoardService.check_board_access(db, board_id, current_user_id)
+        if current_role != "OWNER":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the board owner can update member roles",
+            )
+
+        stmt = select(BoardMember, User).join(User, User.id == BoardMember.user_id).where(
+            BoardMember.board_id == board_id,
+            BoardMember.user_id == member_user_id,
+        )
+        res = await db.execute(stmt)
+        row = res.first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Board member not found")
+
+        bm, target_user = row
+        bm.role = role
+        await db.flush()
+        await db.refresh(bm)
+        return bm, target_user
+
+    @staticmethod
+    async def remove_board_member(
+        db: AsyncSession, board_id: str, member_user_id: str, current_user_id: str
+    ) -> None:
+        current_role = await BoardService.check_board_access(db, board_id, current_user_id)
+        if current_role != "OWNER":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the board owner can remove members",
+            )
+
+        stmt = select(BoardMember).where(
+            BoardMember.board_id == board_id,
+            BoardMember.user_id == member_user_id,
+        )
+        res = await db.execute(stmt)
+        bm = res.scalars().first()
+        if not bm:
+            raise HTTPException(status_code=404, detail="Board member not found")
+
+        await db.delete(bm)
+        await db.flush()
+
+    @staticmethod
     async def get_board_snapshot(
         db: AsyncSession, board_id: str, user_id: Optional[str] = None
     ) -> dict:
@@ -282,7 +331,12 @@ class BoardService:
         # User role
         role = "EDITOR"
         if user_id:
-            role = await BoardService.check_board_access(db, board_id, user_id) or "VIEWER"
+            role = await BoardService.check_board_access(db, board_id, user_id)
+            if not role:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to access this board",
+                )
 
         return {
             "board": {

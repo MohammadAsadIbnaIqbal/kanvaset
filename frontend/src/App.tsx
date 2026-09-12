@@ -7,7 +7,35 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 
 const MainApp: React.FC = () => {
   const { user, loading } = useAuth();
-  const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
+  const [activeBoardId, setActiveBoardId] = useState<string | null>(() => {
+    if (typeof window !== "undefined" && window.location.hash.startsWith("#board=")) {
+      return window.location.hash.replace("#board=", "");
+    }
+    return null;
+  });
+
+  const handleSelectBoard = (boardId: string | null) => {
+    setActiveBoardId(boardId);
+    if (typeof window !== "undefined") {
+      if (boardId) {
+        window.location.hash = `board=${boardId}`;
+      } else {
+        history.pushState("", document.title, window.location.pathname + window.location.search);
+      }
+    }
+  };
+
+  React.useEffect(() => {
+    const handleHashChange = () => {
+      if (window.location.hash.startsWith("#board=")) {
+        setActiveBoardId(window.location.hash.replace("#board=", ""));
+      } else {
+        setActiveBoardId(null);
+      }
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
 
   if (loading) {
     return (
@@ -28,7 +56,7 @@ const MainApp: React.FC = () => {
     return (
       <BoardPage
         boardId={activeBoardId}
-        onBack={() => setActiveBoardId(null)}
+        onBack={() => handleSelectBoard(null)}
       />
     );
   }
@@ -36,7 +64,7 @@ const MainApp: React.FC = () => {
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-950 overflow-hidden">
       <Navbar />
-      <DashboardPage onSelectBoard={(boardId) => setActiveBoardId(boardId)} />
+      <DashboardPage onSelectBoard={(boardId) => handleSelectBoard(boardId)} />
     </div>
   );
 };

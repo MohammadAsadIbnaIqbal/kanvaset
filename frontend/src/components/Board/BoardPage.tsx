@@ -18,6 +18,7 @@ export const BoardPage: React.FC<BoardPageProps> = ({ boardId, onBack }) => {
   const { user, token } = useAuth();
   const [boardInfo, setBoardInfo] = useState<Board | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Active tool and styling state
   const [activeTool, setActiveTool] = useState<ToolType>("select");
@@ -50,10 +51,11 @@ export const BoardPage: React.FC<BoardPageProps> = ({ boardId, onBack }) => {
     async function loadBoard() {
       try {
         setLoading(true);
+        setLoadError(null);
         const b = await api.getBoard(boardId);
         setBoardInfo(b);
-      } catch (err) {
-        console.error("Failed to load board details:", err);
+      } catch (err: any) {
+        setLoadError(err?.message || "Failed to load board details");
       } finally {
         setLoading(false);
       }
@@ -65,8 +67,8 @@ export const BoardPage: React.FC<BoardPageProps> = ({ boardId, onBack }) => {
     try {
       const updated = await api.updateBoard(boardId, { name: newName });
       setBoardInfo(updated);
-    } catch (err) {
-      console.error("Failed to rename board:", err);
+    } catch {
+      // Handled silently
     }
   };
 
@@ -95,6 +97,23 @@ export const BoardPage: React.FC<BoardPageProps> = ({ boardId, onBack }) => {
     return (
       <div className="flex-1 flex items-center justify-center bg-slate-950 text-slate-400">
         <span className="w-8 h-8 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 text-slate-400 p-6 space-y-4">
+        <div className="p-6 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-center max-w-md shadow-xl">
+          <h2 className="text-base font-bold text-rose-400 mb-2">Access Denied or Board Unavailable</h2>
+          <p className="text-xs text-slate-400 mb-5">{loadError}</p>
+          <button
+            onClick={onBack}
+            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer transition-colors"
+          >
+            Return to Dashboard
+          </button>
+        </div>
       </div>
     );
   }
@@ -132,6 +151,7 @@ export const BoardPage: React.FC<BoardPageProps> = ({ boardId, onBack }) => {
           onDeleteObject={deleteObject}
           onSelectObject={setSelectedObjectId}
           selectedObjectId={selectedObjectId}
+          onSelectTool={setActiveTool}
         />
 
         {/* Floating Action Toolbar */}

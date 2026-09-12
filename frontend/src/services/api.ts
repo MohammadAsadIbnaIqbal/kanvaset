@@ -1,7 +1,10 @@
 import type { AuthResponse, User } from "../types/auth";
 import type { Board, BoardMember, Workspace } from "../types/board";
 
-const API_BASE = "/api/v1";
+const API_BASE =
+  typeof window !== "undefined" && window.location.port === "5173"
+    ? "http://127.0.0.1:8000/api/v1"
+    : "/api/v1";
 
 export class ApiError extends Error {
   status: number;
@@ -138,5 +141,18 @@ export const api = {
 
   async getBoardMembers(boardId: string): Promise<BoardMember[]> {
     return request<BoardMember[]>(`/boards/${boardId}/members`);
+  },
+
+  async updateBoardMember(boardId: string, userId: string, role: string): Promise<BoardMember> {
+    return request<BoardMember>(`/boards/${boardId}/members/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    });
+  },
+
+  async removeBoardMember(boardId: string, userId: string): Promise<void> {
+    return request<void>(`/boards/${boardId}/members/${userId}`, {
+      method: "DELETE",
+    });
   },
 };

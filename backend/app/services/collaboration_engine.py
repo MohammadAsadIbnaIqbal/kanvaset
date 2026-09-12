@@ -32,11 +32,20 @@ class CollaborationEngine:
         if msg.operation_id:
             is_duplicate = await redis_service.check_and_mark_operation(msg.operation_id)
             if is_duplicate:
-                logger.info("Ignoring duplicate operation %s", msg.operation_id)
-                return None, None
+                logger.info("Ignoring duplicate operation %s and returning ACK", msg.operation_id)
+                b_stmt = select(Board).where(Board.id == msg.board_id)
+                b_res = await db.execute(b_stmt)
+                b_obj = b_res.scalars().first()
+                rev = b_obj.revision if b_obj else 0
+                return WSMessage(
+                    type=WSMessageType.ACK,
+                    board_id=msg.board_id,
+                    operation_id=msg.operation_id,
+                    server_revision=rev,
+                ), None
 
-        # 3. Load Board and increment monotonic revision
-        board_stmt = select(Board).where(Board.id == msg.board_id)
+        # 3. Load Board and increment monotonic revision with pessimistic row lock
+        board_stmt = select(Board).where(Board.id == msg.board_id).with_for_update()
         res_board = await db.execute(board_stmt)
         board = res_board.scalars().first()
         if not board:
@@ -54,56 +63,70 @@ class CollaborationEngine:
             if not target_obj_id:
                 return None, "Object ID is required for OBJECT_CREATED."
             
-            # Check if object exists
-            obj_stmt = select(BoardObject).where(BoardObject.id == target_obj_id)
-            res_obj = await db.execute(obj_stmt)
-            obj = res_obj.scalars().first()
+            # Check if object exists globally
+            global_stmt = select(BoardObject).where(BoardObject.id == target_obj_id)
+            res_global = await db.execute(global_stmt)
+            existing_global = res_global.scalars().first()
+            if existing_global and existing_global.board_id != msg.board_id:
+                return None, f"Object ID '{target_obj_id}' belongs to another board."
 
-            if obj:
-                # Revive or update if already present
-                obj.is_deleted = False
-                obj.type = payload.get("type", obj.type)
-                obj.x = float(payload.get("x", obj.x))
-                obj.y = float(payload.get("y", obj.y))
-                obj.width = float(payload.get("width", obj.width))
-                obj.height = float(payload.get("height", obj.height))
-                obj.rotation = float(payload.get("rotation", obj.rotation))
-                obj.z_index = int(payload.get("z_index", obj.z_index))
-                obj.color = payload.get("color", obj.color)
-                obj.fill = payload.get("fill", obj.fill)
-                obj.stroke = payload.get("stroke", obj.stroke)
-                obj.stroke_width = float(payload.get("stroke_width", obj.stroke_width))
-                obj.text = payload.get("text", obj.text)
-                obj.properties = payload.get("properties", obj.properties)
-                obj.version += 1
-                obj.last_modified_by = user_id
-            else:
-                obj = BoardObject(
-                    id=target_obj_id,
-                    board_id=msg.board_id,
-                    type=payload.get("type", "rectangle"),
-                    x=float(payload.get("x", 0.0)),
-                    y=float(payload.get("y", 0.0)),
-                    width=float(payload.get("width", 120.0)),
-                    height=float(payload.get("height", 80.0)),
-                    rotation=float(payload.get("rotation", 0.0)),
-                    z_index=int(payload.get("z_index", 0)),
-                    color=payload.get("color", "#ffffff"),
-                    fill=payload.get("fill", "#ffffff"),
-                    stroke=payload.get("stroke", "#000000"),
-                    stroke_width=float(payload.get("stroke_width", 1.5)),
-                    text=payload.get("text", ""),
-                    properties=payload.get("properties", {}),
-                    version=1,
-                    is_deleted=False,
-                    created_by=user_id,
-                    last_modified_by=user_id,
-                )
-                db.add(obj)
-            
-            await db.flush()
-            await db.refresh(obj)
-            out_payload = obj.to_dict()
+            obj = existing_global
+            try:
+                if obj:
+                    # Revive or update if already present
+                    obj.is_deleted = False
+                    obj.type = str(payload.get("type", obj.type))
+                    if "x" in payload:
+                        obj.x = float(payload["x"])
+                    if "y" in payload:
+                        obj.y = float(payload["y"])
+                    if "width" in payload:
+                        obj.width = max(float(payload["width"]), 1.0)
+                    if "height" in payload:
+                        obj.height = max(float(payload["height"]), 1.0)
+                    if "rotation" in payload:
+                        obj.rotation = float(payload["rotation"])
+                    if "z_index" in payload:
+                        obj.z_index = int(payload["z_index"])
+                    obj.color = payload.get("color", obj.color)
+                    obj.fill = payload.get("fill", obj.fill)
+                    obj.stroke = payload.get("stroke", obj.stroke)
+                    if "stroke_width" in payload:
+                        obj.stroke_width = max(float(payload["stroke_width"]), 0.0)
+                    obj.text = str(payload.get("text", obj.text or ""))
+                    if "properties" in payload and isinstance(payload["properties"], dict):
+                        obj.properties = payload["properties"]
+                    obj.version += 1
+                    obj.last_modified_by = user_id
+                else:
+                    obj = BoardObject(
+                        id=target_obj_id,
+                        board_id=msg.board_id,
+                        type=str(payload.get("type", "rectangle")),
+                        x=float(payload.get("x", 0.0)),
+                        y=float(payload.get("y", 0.0)),
+                        width=max(float(payload.get("width", 120.0)), 1.0),
+                        height=max(float(payload.get("height", 80.0)), 1.0),
+                        rotation=float(payload.get("rotation", 0.0)),
+                        z_index=int(payload.get("z_index", 0)),
+                        color=payload.get("color", "#ffffff"),
+                        fill=payload.get("fill", "#ffffff"),
+                        stroke=payload.get("stroke", "#000000"),
+                        stroke_width=max(float(payload.get("stroke_width", 1.5)), 0.0),
+                        text=str(payload.get("text", "")),
+                        properties=payload.get("properties", {}) if isinstance(payload.get("properties"), dict) else {},
+                        version=1,
+                        is_deleted=False,
+                        created_by=user_id,
+                        last_modified_by=user_id,
+                    )
+                    db.add(obj)
+                
+                await db.flush()
+                await db.refresh(obj)
+                out_payload = obj.to_dict()
+            except (ValueError, TypeError) as e:
+                return None, f"Invalid value in operation payload: {str(e)}"
 
         elif msg.type == WSMessageType.OBJECT_MOVED:
             if not target_obj_id:
@@ -118,10 +141,14 @@ class CollaborationEngine:
             if not obj or obj.is_deleted:
                 return None, f"Object {target_obj_id} not found."
 
-            if "x" in payload:
-                obj.x = float(payload["x"])
-            if "y" in payload:
-                obj.y = float(payload["y"])
+            try:
+                if "x" in payload:
+                    obj.x = float(payload["x"])
+                if "y" in payload:
+                    obj.y = float(payload["y"])
+            except (ValueError, TypeError) as e:
+                return None, f"Invalid numeric value in payload: {str(e)}"
+
             obj.version += 1
             obj.last_modified_by = user_id
             await db.flush()
@@ -140,14 +167,18 @@ class CollaborationEngine:
             if not obj or obj.is_deleted:
                 return None, f"Object {target_obj_id} not found."
 
-            if "width" in payload:
-                obj.width = float(payload["width"])
-            if "height" in payload:
-                obj.height = float(payload["height"])
-            if "x" in payload:
-                obj.x = float(payload["x"])
-            if "y" in payload:
-                obj.y = float(payload["y"])
+            try:
+                if "width" in payload:
+                    obj.width = max(float(payload["width"]), 1.0)
+                if "height" in payload:
+                    obj.height = max(float(payload["height"]), 1.0)
+                if "x" in payload:
+                    obj.x = float(payload["x"])
+                if "y" in payload:
+                    obj.y = float(payload["y"])
+            except (ValueError, TypeError) as e:
+                return None, f"Invalid numeric value in payload: {str(e)}"
+
             obj.version += 1
             obj.last_modified_by = user_id
             await db.flush()
@@ -173,14 +204,26 @@ class CollaborationEngine:
             if not obj or obj.is_deleted:
                 return None, f"Object {target_obj_id} not found."
 
-            updatable_fields = [
-                "text", "color", "fill", "stroke", "stroke_width",
-                "rotation", "z_index", "properties"
-            ]
-            for field in updatable_fields:
-                if field in payload:
-                    setattr(obj, field, payload[field])
-            
+            try:
+                if "text" in payload:
+                    obj.text = str(payload["text"])
+                if "color" in payload:
+                    obj.color = str(payload["color"])
+                if "fill" in payload:
+                    obj.fill = str(payload["fill"])
+                if "stroke" in payload:
+                    obj.stroke = str(payload["stroke"])
+                if "stroke_width" in payload:
+                    obj.stroke_width = max(float(payload["stroke_width"]), 0.0)
+                if "rotation" in payload:
+                    obj.rotation = float(payload["rotation"])
+                if "z_index" in payload:
+                    obj.z_index = int(payload["z_index"])
+                if "properties" in payload and isinstance(payload["properties"], dict):
+                    obj.properties = payload["properties"]
+            except (ValueError, TypeError) as e:
+                return None, f"Invalid value in payload: {str(e)}"
+
             obj.version += 1
             obj.last_modified_by = user_id
             await db.flush()
@@ -196,12 +239,15 @@ class CollaborationEngine:
             )
             res_obj = await db.execute(obj_stmt)
             obj = res_obj.scalars().first()
-            if obj:
-                obj.is_deleted = True
-                obj.version += 1
-                obj.last_modified_by = user_id
-                await db.flush()
+            if not obj or obj.is_deleted:
+                return None, f"Object {target_obj_id} not found."
+
+            obj.is_deleted = True
+            obj.version += 1
+            obj.last_modified_by = user_id
+            await db.flush()
             out_payload = {"id": target_obj_id, "is_deleted": True}
+
 
         # 5. Persist operation audit entry
         audit = BoardOperation(

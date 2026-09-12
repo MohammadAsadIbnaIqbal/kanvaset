@@ -146,35 +146,45 @@ async def board_websocket_endpoint(
                 WSMessageType.OBJECT_UPDATED,
                 WSMessageType.OBJECT_DELETED,
             ]:
-                async with async_session_maker() as db:
-                    broadcast_msg, err_detail = await collaboration_engine.process_operation(
-                        db=db,
-                        msg=msg,
-                        user_id=user_id,
-                        user_name=username,
-                        role=role
-                    )
-                    if err_detail:
-                        err_resp = WSMessage(
-                            type=WSMessageType.ERROR,
-                            board_id=board_id,
-                            operation_id=msg.operation_id,
-                            payload={"detail": err_detail}
+                try:
+                    async with async_session_maker() as db:
+                        broadcast_msg, err_detail = await collaboration_engine.process_operation(
+                            db=db,
+                            msg=msg,
+                            user_id=user_id,
+                            user_name=username,
+                            role=role
                         )
-                        await websocket.send_text(json.dumps(err_resp.model_dump()))
-                    elif broadcast_msg:
-                        await db.commit()
-                        # Broadcast mutation to room
-                        await manager.broadcast_global(board_id, broadcast_msg.model_dump())
+                        if err_detail:
+                            err_resp = WSMessage(
+                                type=WSMessageType.ERROR,
+                                board_id=board_id,
+                                operation_id=msg.operation_id,
+                                payload={"detail": err_detail}
+                            )
+                            await websocket.send_text(json.dumps(err_resp.model_dump()))
+                        elif broadcast_msg:
+                            await db.commit()
+                            # Broadcast mutation to room
+                            await manager.broadcast_global(board_id, broadcast_msg.model_dump())
 
-                        # Send ACK to sender
-                        ack_resp = WSMessage(
-                            type=WSMessageType.ACK,
-                            board_id=board_id,
-                            operation_id=msg.operation_id,
-                            server_revision=broadcast_msg.server_revision,
-                        )
-                        await websocket.send_text(json.dumps(ack_resp.model_dump()))
+                            # Send ACK to sender
+                            ack_resp = WSMessage(
+                                type=WSMessageType.ACK,
+                                board_id=board_id,
+                                operation_id=msg.operation_id,
+                                server_revision=broadcast_msg.server_revision,
+                            )
+                            await websocket.send_text(json.dumps(ack_resp.model_dump()))
+                except Exception as op_err:
+                    logger.exception("Error processing operation %s: %s", msg.operation_id, op_err)
+                    err_resp = WSMessage(
+                        type=WSMessageType.ERROR,
+                        board_id=board_id,
+                        operation_id=msg.operation_id,
+                        payload={"detail": f"Operation processing error: {str(op_err)}"}
+                    )
+                    await websocket.send_text(json.dumps(err_resp.model_dump()))
 
     except WebSocketDisconnect:
         await manager.disconnect(board_id, client)

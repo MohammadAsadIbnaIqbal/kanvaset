@@ -160,6 +160,7 @@ class BoardConnectionManager:
 
     async def _listen_to_board_channel(self, board_id: str) -> None:
         channel = f"board:{board_id}:events"
+        sub = None
         try:
             sub = await redis_service.subscribe_channel(channel)
             if hasattr(sub, "listen"):
@@ -178,6 +179,15 @@ class BoardConnectionManager:
             pass
         except Exception as e:
             logger.error("Error in board channel listener for %s: %s", board_id, e)
+        finally:
+            if isinstance(sub, asyncio.Queue):
+                await redis_service.in_memory.unsubscribe(channel, sub)
+            elif sub and hasattr(sub, "unsubscribe"):
+                try:
+                    await sub.unsubscribe(channel)
+                    await sub.close()
+                except Exception:
+                    pass
 
 
 manager = BoardConnectionManager()

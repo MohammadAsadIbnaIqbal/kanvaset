@@ -96,7 +96,7 @@ async def test_collaboration_operations_and_concurrency(
     assert "Viewers are not permitted" in err
     assert bcast_msg is None
 
-    # 4. Operation Deduplication: Replaying op-2 does nothing
+    # 4. Operation Deduplication: Replaying op-2 returns ACK with current revision without re-applying
     dup_msg, err = await collaboration_engine.process_operation(
         db=db_session,
         msg=op_move,
@@ -105,7 +105,9 @@ async def test_collaboration_operations_and_concurrency(
         role="OWNER",
     )
     assert err is None
-    assert dup_msg is None  # Ignored as duplicate
+    assert dup_msg is not None
+    assert dup_msg.type == WSMessageType.ACK
+    assert dup_msg.server_revision == 2
 
     # 5. Snapshot validation
     snapshot = await board_service.get_board_snapshot(db_session, board.id, test_user.id)

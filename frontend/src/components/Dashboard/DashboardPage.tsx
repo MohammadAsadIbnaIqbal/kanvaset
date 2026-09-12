@@ -66,7 +66,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectBoard }) =
       setSelectedWs(ws);
       setNewWsName("");
       setShowNewWsModal(false);
-    } catch (err) {
+    } catch {
       alert("Failed to create workspace");
     }
   };
@@ -80,7 +80,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectBoard }) =
       setNewBoardName("");
       setNewBoardDesc("");
       setShowNewBoardModal(false);
-    } catch (err) {
+    } catch {
       alert("Failed to create board");
     }
   };
@@ -91,7 +91,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectBoard }) =
     try {
       await api.deleteBoard(boardId);
       setBoards((prev) => prev.filter((b) => b.id !== boardId));
-    } catch (err) {
+    } catch {
       alert("Failed to delete board");
     }
   };

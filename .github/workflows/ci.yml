@@ -27,6 +27,8 @@ jobs:
           pip install -r backend/requirements.txt
 
       - name: Run Backend Tests
+        env:
+          PYTHONPATH: .
         run: |
           pytest backend/tests -v --cov=backend/app
 

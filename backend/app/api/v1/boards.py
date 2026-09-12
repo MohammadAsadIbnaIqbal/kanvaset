@@ -8,6 +8,7 @@ from backend.app.schemas.board import (
     BoardCreate,
     BoardMemberAdd,
     BoardMemberOut,
+    BoardMemberUpdate,
     BoardOut,
     BoardUpdate,
 )
@@ -148,3 +149,46 @@ async def list_board_members(
         db, board_id=board_id, user_id=current_user.id
     )
     return [BoardMemberOut(**m) for m in members]
+
+
+@router.patch("/boards/{board_id}/members/{user_id}", response_model=BoardMemberOut)
+async def update_board_member(
+    board_id: str,
+    user_id: str,
+    member_in: BoardMemberUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    member, target_user = await board_service.update_board_member(
+        db=db,
+        board_id=board_id,
+        member_user_id=user_id,
+        role=member_in.role,
+        current_user_id=current_user.id,
+    )
+    return BoardMemberOut(
+        id=member.id,
+        board_id=member.board_id,
+        user_id=member.user_id,
+        role=member.role,
+        username=target_user.username,
+        email=target_user.email,
+        avatar_url=target_user.avatar_url,
+        created_at=member.created_at,
+    )
+
+
+@router.delete("/boards/{board_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_board_member(
+    board_id: str,
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await board_service.remove_board_member(
+        db=db,
+        board_id=board_id,
+        member_user_id=user_id,
+        current_user_id=current_user.id,
+    )
+    return None

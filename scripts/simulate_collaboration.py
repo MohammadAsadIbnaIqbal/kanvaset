@@ -14,8 +14,8 @@ import websockets
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("kanvaset.sim")
 
-BASE_URL = "http://localhost:8000"
-WS_BASE_URL = "ws://localhost:8000"
+BASE_URL = "http://127.0.0.1:8000"
+WS_BASE_URL = "ws://127.0.0.1:8000"
 
 
 async def run_simulation():
@@ -91,7 +91,13 @@ async def run_simulation():
 
             # Receive initial snapshots
             raw_snap_a = json.loads(await ws_a.recv())
+            while raw_snap_a.get("type") != "SYNC_SNAPSHOT":
+                raw_snap_a = json.loads(await ws_a.recv())
+
             raw_snap_b = json.loads(await ws_b.recv())
+            while raw_snap_b.get("type") != "SYNC_SNAPSHOT":
+                raw_snap_b = json.loads(await ws_b.recv())
+
             assert raw_snap_a["type"] == "SYNC_SNAPSHOT"
             assert raw_snap_b["type"] == "SYNC_SNAPSHOT"
             logger.info("Alice & Bob received initial board snapshot")

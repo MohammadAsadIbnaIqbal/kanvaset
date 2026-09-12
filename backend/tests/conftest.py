@@ -1,4 +1,12 @@
 import os
+import sys
+from pathlib import Path
+
+# Ensure repo root is always in sys.path
+REPO_ROOT = str(Path(__file__).resolve().parent.parent.parent)
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

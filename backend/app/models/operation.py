@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, JSON, String
 from sqlalchemy.orm import relationship
 from backend.app.core.database import Base
 
@@ -11,6 +11,9 @@ def utc_now():
 
 class BoardOperation(Base):
     __tablename__ = "board_operations"
+    __table_args__ = (
+        Index("ix_board_operations_board_revision", "board_id", "revision"),
+    )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     board_id = Column(String(36), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False, index=True)

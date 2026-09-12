@@ -24,10 +24,19 @@ export function useWebSocketBoard({ boardId, token, currentUser }: UseWebSocketB
   const reconnectTimeoutRef = useRef<any>(null);
   const lastCursorSentRef = useRef<number>(0);
   const isMountedRef = useRef<boolean>(true);
+  const serverRevisionRef = useRef<number>(0);
+
+  useEffect(() => {
+    serverRevisionRef.current = serverRevision;
+  }, [serverRevision]);
 
   const sendMessage = useCallback((msg: WSMessage) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(msg));
+      const outbound = {
+        ...msg,
+        client_revision: msg.client_revision ?? serverRevisionRef.current,
+      };
+      wsRef.current.send(JSON.stringify(outbound));
     }
   }, []);
 
@@ -180,7 +189,8 @@ export function useWebSocketBoard({ boardId, token, currentUser }: UseWebSocketB
       setConnectionStatus((prev) => (prev === "connected" ? "reconnecting" : "connecting"));
 
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const host = window.location.host;
+      const isDev = typeof window !== "undefined" && window.location.port === "5173";
+      const host = isDev ? "127.0.0.1:8000" : window.location.host;
       const wsUrl = `${protocol}//${host}/ws/boards/${boardId}?token=${token}`;
 
       const ws = new WebSocket(wsUrl);
@@ -196,6 +206,18 @@ export function useWebSocketBoard({ boardId, token, currentUser }: UseWebSocketB
         if (!isMountedRef.current) return;
         try {
           const msg: WSMessage = JSON.parse(event.data);
+
+          // Monotonic revision gap recovery check
+          if (
+            msg.server_revision &&
+            serverRevisionRef.current > 0 &&
+            msg.server_revision > serverRevisionRef.current + 1
+          ) {
+            sendMessage({
+              type: "SYNC_REQUEST",
+              board_id: boardId,
+            });
+          }
 
           switch (msg.type) {
             case "SYNC_SNAPSHOT": {
@@ -267,34 +289,38 @@ export function useWebSocketBoard({ boardId, token, currentUser }: UseWebSocketB
             }
 
             case "OBJECT_MOVED": {
-              const { id, x, y, version } = msg.payload;
-              setObjects((prev) => {
-                const ex = prev[id];
-                if (!ex) return prev;
-                return { ...prev, [id]: { ...ex, x, y, version: version ?? ex.version + 1 } };
-              });
-              if (msg.server_revision) setServerRevision(msg.server_revision);
+              if (msg.payload && msg.payload.id) {
+                const { id, x, y, version } = msg.payload;
+                setObjects((prev) => {
+                  const ex = prev[id];
+                  if (!ex) return prev;
+                  return { ...prev, [id]: { ...ex, x, y, version: version ?? ex.version + 1 } };
+                });
+                if (msg.server_revision) setServerRevision(msg.server_revision);
+              }
               break;
             }
 
             case "OBJECT_RESIZED": {
-              const { id, width, height, x, y, version } = msg.payload;
-              setObjects((prev) => {
-                const ex = prev[id];
-                if (!ex) return prev;
-                return {
-                  ...prev,
-                  [id]: {
-                    ...ex,
-                    width,
-                    height,
-                    x: x !== undefined ? x : ex.x,
-                    y: y !== undefined ? y : ex.y,
-                    version: version ?? ex.version + 1,
-                  },
-                };
-              });
-              if (msg.server_revision) setServerRevision(msg.server_revision);
+              if (msg.payload && msg.payload.id) {
+                const { id, width, height, x, y, version } = msg.payload;
+                setObjects((prev) => {
+                  const ex = prev[id];
+                  if (!ex) return prev;
+                  return {
+                    ...prev,
+                    [id]: {
+                      ...ex,
+                      width,
+                      height,
+                      x: x !== undefined ? x : ex.x,
+                      y: y !== undefined ? y : ex.y,
+                      version: version ?? ex.version + 1,
+                    },
+                  };
+                });
+                if (msg.server_revision) setServerRevision(msg.server_revision);
+              }
               break;
             }
 
@@ -337,8 +363,13 @@ export function useWebSocketBoard({ boardId, token, currentUser }: UseWebSocketB
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event: CloseEvent) => {
         if (!isMountedRef.current) return;
+        if (event.code === 1008 || event.code === 4003) {
+          setConnectionStatus("disconnected");
+          setLastError("Access denied or session expired.");
+          return;
+        }
         setConnectionStatus("reconnecting");
         // Reconnect backoff
         reconnectTimeoutRef.current = setTimeout(() => {

@@ -18,6 +18,7 @@ interface BoardCanvasProps {
   onDeleteObject: (id: string) => void;
   onSelectObject: (id: string | null) => void;
   selectedObjectId: string | null;
+  onSelectTool?: (tool: ToolType) => void;
 }
 
 type ResizeHandle = "nw" | "ne" | "se" | "sw" | "n" | "s" | "e" | "w";
@@ -38,6 +39,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
   onDeleteObject,
   onSelectObject,
   selectedObjectId,
+  onSelectTool,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -52,6 +54,8 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
   const [isDraggingObject, setIsDraggingObject] = useState(false);
   const dragStartMouseRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragStartObjPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const lastMoveSentRef = useRef<number>(0);
+  const currentDragPosRef = useRef<{ x: number; y: number } | null>(null);
 
   // Resizing Object
   const [activeResizeHandle, setActiveResizeHandle] = useState<ResizeHandle | null>(null);
@@ -146,8 +150,8 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
     // If creating a new shape
     if (activeTool !== "select" && !isViewer) {
       const id = `obj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-      const w = activeTool === "sticky_note" ? 180 : activeTool === "circle" ? 140 : 160;
-      const h = activeTool === "sticky_note" ? 180 : activeTool === "circle" ? 140 : 100;
+      const w = activeTool === "sticky_note" ? 180 : activeTool === "circle" ? 140 : activeTool === "connector" ? 220 : 160;
+      const h = activeTool === "sticky_note" ? 180 : activeTool === "circle" ? 140 : activeTool === "connector" ? 40 : 100;
 
       onCreateObject({
         id,
@@ -163,6 +167,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
         text: activeTool === "sticky_note" ? "New Idea" : activeTool === "text" ? "Type something..." : "",
       });
       onSelectObject(id);
+      onSelectTool?.("select");
       return;
     }
 
@@ -194,7 +199,13 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
       const dy = (e.clientY - dragStartMouseRef.current.y) / zoom;
       const newX = Math.round(dragStartObjPosRef.current.x + dx);
       const newY = Math.round(dragStartObjPosRef.current.y + dy);
-      onMoveObject(selectedObjectId, newX, newY);
+      currentDragPosRef.current = { x: newX, y: newY };
+
+      const now = performance.now();
+      if (now - lastMoveSentRef.current > 40) {
+        lastMoveSentRef.current = now;
+        onMoveObject(selectedObjectId, newX, newY);
+      }
       return;
     }
 
@@ -231,6 +242,10 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
 
   // Mouse Up
   const handleMouseUp = () => {
+    if (isDraggingObject && selectedObjectId && currentDragPosRef.current && !isViewer) {
+      onMoveObject(selectedObjectId, currentDragPosRef.current.x, currentDragPosRef.current.y);
+      currentDragPosRef.current = null;
+    }
     setIsPanning(false);
     setIsDraggingObject(false);
     setActiveResizeHandle(null);
@@ -323,6 +338,9 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
                     <textarea
                       autoFocus
                       value={editText}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
                       onChange={(e) => setEditText(e.target.value)}
                       onBlur={() => {
                         onUpdateObject(obj.id, { text: editText });
@@ -352,6 +370,9 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
                     <textarea
                       autoFocus
                       value={editText}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
                       onChange={(e) => setEditText(e.target.value)}
                       onBlur={() => {
                         onUpdateObject(obj.id, { text: editText });
@@ -381,6 +402,9 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
                     <textarea
                       autoFocus
                       value={editText}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
                       onChange={(e) => setEditText(e.target.value)}
                       onBlur={() => {
                         onUpdateObject(obj.id, { text: editText });
@@ -403,6 +427,9 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
                     <textarea
                       autoFocus
                       value={editText}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
                       onChange={(e) => setEditText(e.target.value)}
                       onBlur={() => {
                         onUpdateObject(obj.id, { text: editText });
@@ -414,6 +441,57 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
                     <div className="text-white font-medium text-base leading-relaxed whitespace-pre-wrap break-words">
                       {obj.text || "Double-click to edit text"}
                     </div>
+                  )}
+                </div>
+              )}
+
+              {/* Connector / Arrow */}
+              {obj.type === "connector" && (
+                <div className="w-full h-full relative flex items-center justify-center">
+                  <svg className="w-full h-full overflow-visible">
+                    <defs>
+                      <marker
+                        id={`arrow-${obj.id}`}
+                        viewBox="0 0 10 10"
+                        refX="8"
+                        refY="5"
+                        markerWidth="6"
+                        markerHeight="6"
+                        orient="auto-start-reverse"
+                      >
+                        <path d="M 0 1 L 10 5 L 0 9 z" fill={obj.stroke || "#6366f1"} />
+                      </marker>
+                    </defs>
+                    <line
+                      x1="4"
+                      y1={obj.height / 2}
+                      x2={Math.max(obj.width - 12, 10)}
+                      y2={obj.height / 2}
+                      stroke={obj.stroke || "#6366f1"}
+                      strokeWidth={obj.stroke_width || 3}
+                      markerEnd={`url(#arrow-${obj.id})`}
+                    />
+                  </svg>
+                  {isEditing ? (
+                    <textarea
+                      autoFocus
+                      value={editText}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      onChange={(e) => setEditText(e.target.value)}
+                      onBlur={() => {
+                        onUpdateObject(obj.id, { text: editText });
+                        setEditingId(null);
+                      }}
+                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-900 border border-indigo-500 rounded px-2 py-0.5 text-xs text-white text-center outline-none resize-none"
+                    />
+                  ) : (
+                    obj.text && (
+                      <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-900/90 px-2 py-0.5 rounded text-xs font-medium text-slate-200 border border-slate-700 select-none shadow-sm">
+                        {obj.text}
+                      </span>
+                    )
                   )}
                 </div>
               )}

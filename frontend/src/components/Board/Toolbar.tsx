@@ -3,6 +3,7 @@ import {
   Circle,
   Hand,
   MousePointer,
+  MoveRight,
   Square,
   StickyNote,
   Trash2,
@@ -128,6 +129,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             }`}
           >
             <Type className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => onSelectTool("connector")}
+            title="Connector / Arrow (L)"
+            className={`p-2 rounded-xl transition-all cursor-pointer ${
+              activeTool === "connector"
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                : "text-slate-400 hover:text-white hover:bg-slate-800/80"
+            }`}
+          >
+            <MoveRight className="w-4 h-4" />
           </button>
 
           {/* Color Palettes for Sticky Notes / Shapes */}
