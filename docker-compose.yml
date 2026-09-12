@@ -1,0 +1,78 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kanvaset_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kanvaset
+      POSTGRES_PASSWORD: kanvaset_secret
+      POSTGRES_DB: kanvaset_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kanvaset -d kanvaset_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: kanvaset_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: kanvaset_backend
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=production
+      - PROJECT_NAME=Kanvaset
+      - SECRET_KEY=kanvaset_production_super_secret_jwt_key_9876543210
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=1440
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_USER=kanvaset
+      - POSTGRES_PASSWORD=kanvaset_secret
+      - POSTGRES_DB=kanvaset_db
+      - POSTGRES_PORT=5432
+      - DATABASE_URL=postgresql+asyncpg://kanvaset:kanvaset_secret@postgres:5432/kanvaset_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379/0
+      - USE_REDIS=true
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:80
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: kanvaset_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
