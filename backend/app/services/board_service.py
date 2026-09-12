@@ -114,6 +114,53 @@ class BoardService:
         return results
 
     @staticmethod
+    async def get_shared_boards(
+        db: AsyncSession, user_id: str
+    ) -> List[dict]:
+        """
+        Returns all boards explicitly shared with the user where the user is NOT the owner of the board's workspace.
+        """
+        stmt = (
+            select(
+                Board,
+                BoardMember.role.label("user_role"),
+                Workspace.name.label("workspace_name"),
+                User.username.label("owner_username"),
+                func.count(BoardObject.id).filter(BoardObject.is_deleted.is_(False)).label("objects_count")
+            )
+            .join(BoardMember, BoardMember.board_id == Board.id)
+            .join(Workspace, Workspace.id == Board.workspace_id)
+            .outerjoin(User, User.id == Board.created_by)
+            .outerjoin(BoardObject, BoardObject.board_id == Board.id)
+            .where(
+                BoardMember.user_id == user_id,
+                Workspace.owner_id != user_id,
+            )
+            .group_by(Board.id, BoardMember.role, Workspace.name, User.username)
+            .order_by(Board.updated_at.desc())
+        )
+        res = await db.execute(stmt)
+        rows = res.all()
+
+        results = []
+        for board, user_role, ws_name, owner_name, count in rows:
+            results.append({
+                "id": board.id,
+                "workspace_id": board.workspace_id,
+                "name": board.name,
+                "description": board.description,
+                "revision": board.revision,
+                "created_by": board.created_by,
+                "created_at": board.created_at,
+                "updated_at": board.updated_at,
+                "role": user_role or "EDITOR",
+                "objects_count": count or 0,
+                "workspace_name": ws_name,
+                "owner_username": owner_name or "Workspace Owner",
+            })
+        return results
+
+    @staticmethod
     async def get_board(
         db: AsyncSession, board_id: str, user_id: str
     ) -> dict:

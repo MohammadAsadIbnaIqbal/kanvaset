@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Shield, UserPlus, X } from "lucide-react";
+import { CheckCircle2, Shield, Trash2, UserPlus, X } from "lucide-react";
 import { api } from "../../services/api";
 import type { BoardMember } from "../../types/board";
 
@@ -14,6 +14,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ boardId, onClose }) => {
   const [role, setRole] = useState<"OWNER" | "EDITOR" | "VIEWER">("EDITOR");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const loadMembers = async () => {
     try {
@@ -32,16 +33,43 @@ export const ShareModal: React.FC<ShareModalProps> = ({ boardId, onClose }) => {
     e.preventDefault();
     if (!userQuery.trim()) return;
     setError(null);
+    setSuccessMsg(null);
     setLoading(true);
 
     try {
       await api.addBoardMember(boardId, userQuery.trim(), role);
+      setSuccessMsg(`Successfully shared board with ${userQuery.trim()}!`);
       setUserQuery("");
       await loadMembers();
     } catch (err: any) {
       setError(err.message || "Failed to add member");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      await api.updateBoardMember(boardId, userId, newRole);
+      setSuccessMsg("Member role updated successfully.");
+      await loadMembers();
+    } catch (err: any) {
+      setError(err.message || "Failed to update member role");
+    }
+  };
+
+  const handleRemoveMember = async (userId: string, username: string) => {
+    if (!confirm(`Are you sure you want to remove ${username}'s access to this board?`)) return;
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      await api.removeBoardMember(boardId, userId);
+      setSuccessMsg(`Access revoked for ${username}.`);
+      await loadMembers();
+    } catch (err: any) {
+      setError(err.message || "Failed to remove member");
     }
   };
 
@@ -55,6 +83,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ boardId, onClose }) => {
           </div>
           <button
             onClick={onClose}
+            aria-label="Close share modal"
             className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -62,8 +91,15 @@ export const ShareModal: React.FC<ShareModalProps> = ({ boardId, onClose }) => {
         </div>
 
         {error && (
-          <div className="mt-4 p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
-            {error}
+          <div className="mt-4 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center space-x-2">
+            <span>{error}</span>
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="mt-4 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center space-x-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{successMsg}</span>
           </div>
         )}
 
@@ -88,17 +124,16 @@ export const ShareModal: React.FC<ShareModalProps> = ({ boardId, onClose }) => {
             >
               <option value="EDITOR">Editor</option>
               <option value="VIEWER">Viewer</option>
-              <option value="OWNER">Owner</option>
             </select>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center justify-center space-x-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center justify-center space-x-1.5 transition-colors cursor-pointer disabled:opacity-50 shadow-md shadow-indigo-600/30"
           >
             <UserPlus className="w-3.5 h-3.5" />
-            <span>{loading ? "Adding..." : "Grant Access"}</span>
+            <span>{loading ? "Inviting..." : "Grant Access"}</span>
           </button>
         </form>
 
@@ -111,10 +146,10 @@ export const ShareModal: React.FC<ShareModalProps> = ({ boardId, onClose }) => {
             {members.map((m) => (
               <div
                 key={m.id}
-                className="flex items-center justify-between p-2 rounded-xl bg-slate-800/60 border border-slate-700/50 text-xs"
+                className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50 text-xs"
               >
-                <div className="flex items-center space-x-2.5 truncate">
-                  <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-[10px] uppercase">
+                <div className="flex items-center space-x-2.5 truncate max-w-[190px]">
+                  <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-[10px] uppercase shrink-0">
                     {m.username.charAt(0)}
                   </div>
                   <div className="truncate">
@@ -123,17 +158,31 @@ export const ShareModal: React.FC<ShareModalProps> = ({ boardId, onClose }) => {
                   </div>
                 </div>
 
-                <span
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                    m.role === "OWNER"
-                      ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
-                      : m.role === "EDITOR"
-                      ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30"
-                      : "bg-slate-700/50 text-slate-300 border-slate-600"
-                  }`}
-                >
-                  {m.role}
-                </span>
+                <div className="flex items-center space-x-2 shrink-0">
+                  {m.role === "OWNER" ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-400 border-amber-500/30">
+                      OWNER
+                    </span>
+                  ) : (
+                    <>
+                      <select
+                        value={m.role}
+                        onChange={(e) => handleRoleChange(m.user_id, e.target.value)}
+                        className="bg-slate-800 border border-slate-700 text-slate-200 text-[10px] font-semibold rounded-lg px-2 py-0.5 outline-none cursor-pointer hover:border-slate-600"
+                      >
+                        <option value="EDITOR">EDITOR</option>
+                        <option value="VIEWER">VIEWER</option>
+                      </select>
+                      <button
+                        onClick={() => handleRemoveMember(m.user_id, m.username)}
+                        title="Revoke access"
+                        className="p-1 rounded-md text-slate-400 hover:text-rose-400 hover:bg-slate-700/60 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             ))}
           </div>

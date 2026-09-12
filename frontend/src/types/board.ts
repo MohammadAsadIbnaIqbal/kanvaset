@@ -40,6 +40,8 @@ export interface Board {
   updated_at: string;
   role: "OWNER" | "EDITOR" | "VIEWER";
   objects_count?: number;
+  workspace_name?: string;
+  owner_username?: string;
 }
 
 export interface Workspace {

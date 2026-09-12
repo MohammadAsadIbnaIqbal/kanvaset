@@ -64,7 +64,17 @@ async def test_workspaces_and_boards_flow(
     assert b_view.status_code == 200
     assert b_view.json()["role"] == "VIEWER"
 
-    # 7. User B cannot update board metadata (only OWNER/EDITOR can)
+    # 7. User B sees the board under GET /boards/shared
+    shared_resp = await client.get("/api/v1/boards/shared", headers=auth_headers_b)
+    assert shared_resp.status_code == 200
+    shared_boards = shared_resp.json()
+    assert len(shared_boards) == 1
+    assert shared_boards[0]["id"] == board_id
+    assert shared_boards[0]["role"] == "VIEWER"
+    assert shared_boards[0]["owner_username"] == test_user.username
+    assert shared_boards[0]["workspace_name"] == "Engineering Team"
+
+    # 8. User B cannot update board metadata as VIEWER
     b_update = await client.patch(
         f"/api/v1/boards/{board_id}",
         json={"name": "Hacked Title"},
@@ -72,22 +82,46 @@ async def test_workspaces_and_boards_flow(
     )
     assert b_update.status_code == 403
 
-    # 8. Owner updates board title
-    owner_update = await client.patch(
-        f"/api/v1/boards/{board_id}",
-        json={"name": "Q3 Planning & Retro"},
+    # 9. Owner promotes User B to EDITOR
+    promote_resp = await client.patch(
+        f"/api/v1/boards/{board_id}/members/{test_user_b.id}",
+        json={"role": "EDITOR"},
         headers=auth_headers,
     )
-    assert owner_update.status_code == 200
-    assert owner_update.json()["name"] == "Q3 Planning & Retro"
+    assert promote_resp.status_code == 200
+    assert promote_resp.json()["role"] == "EDITOR"
 
-    # 9. Snapshot endpoint
+    # 10. User B can now update board metadata as EDITOR
+    b_editor_update = await client.patch(
+        f"/api/v1/boards/{board_id}",
+        json={"name": "Collaborative Sprint Planning"},
+        headers=auth_headers_b,
+    )
+    assert b_editor_update.status_code == 200
+    assert b_editor_update.json()["name"] == "Collaborative Sprint Planning"
+
+    # 11. Snapshot endpoint
     snapshot_resp = await client.get(
         f"/api/v1/boards/{board_id}/snapshot",
         headers=auth_headers,
     )
     assert snapshot_resp.status_code == 200
     snap = snapshot_resp.json()
-    assert snap["board"]["name"] == "Q3 Planning & Retro"
+    assert snap["board"]["name"] == "Collaborative Sprint Planning"
     assert "objects" in snap
     assert "presence" in snap
+
+    # 12. Owner revokes access
+    del_resp = await client.delete(
+        f"/api/v1/boards/{board_id}/members/{test_user_b.id}",
+        headers=auth_headers,
+    )
+    assert del_resp.status_code == 204
+
+    # 13. User B no longer sees it under shared and cannot access it
+    shared_resp2 = await client.get("/api/v1/boards/shared", headers=auth_headers_b)
+    assert shared_resp2.status_code == 200
+    assert len(shared_resp2.json()) == 0
+
+    revoked_view = await client.get(f"/api/v1/boards/{board_id}", headers=auth_headers_b)
+    assert revoked_view.status_code == 403

@@ -47,6 +47,8 @@ class BoardOut(BaseModel):
     updated_at: datetime
     role: Optional[str] = "EDITOR"
     objects_count: Optional[int] = 0
+    workspace_name: Optional[str] = None
+    owner_username: Optional[str] = None
 
     class Config:
         from_attributes = True

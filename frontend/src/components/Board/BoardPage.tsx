@@ -8,6 +8,7 @@ import { BoardHeader } from "./BoardHeader";
 import { ShareModal } from "./ShareModal";
 import type { ToolType } from "./Toolbar";
 import { Toolbar } from "./Toolbar";
+import { exportBoardAsJson, exportBoardAsPng } from "../../utils/exportCanvas";
 
 interface BoardPageProps {
   boardId: string;
@@ -74,22 +75,9 @@ export const BoardPage: React.FC<BoardPageProps> = ({ boardId, onBack }) => {
 
   const handleExport = (format: "json" | "png") => {
     if (format === "json") {
-      const dataStr = JSON.stringify(
-        {
-          board: boardInfo,
-          objects,
-          exported_at: new Date().toISOString(),
-        },
-        null,
-        2
-      );
-      const blob = new Blob([dataStr], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${boardInfo?.name || "board"}_export.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      exportBoardAsJson(boardInfo, objects);
+    } else if (format === "png") {
+      exportBoardAsPng(boardInfo, objects);
     }
   };
 

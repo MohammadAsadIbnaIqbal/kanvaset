@@ -104,6 +104,10 @@ export const api = {
     return request<Board[]>(`/workspaces/${workspaceId}/boards`);
   },
 
+  async getSharedBoards(): Promise<Board[]> {
+    return request<Board[]>("/boards/shared");
+  },
+
   async createBoard(workspaceId: string, name: string, description?: string): Promise<Board> {
     return request<Board>(`/workspaces/${workspaceId}/boards`, {
       method: "POST",

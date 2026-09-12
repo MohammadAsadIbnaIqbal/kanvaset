@@ -53,6 +53,15 @@ async def list_workspace_boards(
     return [BoardOut(**b) for b in boards]
 
 
+@router.get("/boards/shared", response_model=List[BoardOut])
+async def list_shared_boards(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    shared = await board_service.get_shared_boards(db, user_id=current_user.id)
+    return [BoardOut(**b) for b in shared]
+
+
 @router.get("/boards/{board_id}", response_model=BoardOut)
 async def get_board(
     board_id: str,
