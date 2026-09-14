@@ -12,6 +12,13 @@ class WSMessageType(str, Enum):
     OBJECT_UPDATED = "OBJECT_UPDATED"
     OBJECT_DELETED = "OBJECT_DELETED"
 
+    # Task & Project Operations
+    TASK_CREATED = "TASK_CREATED"
+    TASK_UPDATED = "TASK_UPDATED"
+    TASK_DELETED = "TASK_DELETED"
+    TASK_COMMENT_ADDED = "TASK_COMMENT_ADDED"
+    ACTIVITY_LOGGED = "ACTIVITY_LOGGED"
+
     # Ephemeral & Presence
     CURSOR_MOVED = "CURSOR_MOVED"
     USER_JOINED = "USER_JOINED"
@@ -29,9 +36,11 @@ class WSMessageType(str, Enum):
 
 class WSMessage(BaseModel):
     type: WSMessageType
-    board_id: str
+    board_id: Optional[str] = None
+    project_id: Optional[str] = None
     operation_id: Optional[str] = None
     object_id: Optional[str] = None
+    task_id: Optional[str] = None
     payload: Optional[Dict[str, Any]] = None
     client_revision: Optional[int] = None
     server_revision: Optional[int] = None
@@ -64,3 +73,11 @@ class PresenceUser(BaseModel):
     color: str
     role: str
     joined_at: float
+
+class ProjectSnapshotPayload(BaseModel):
+    project: Dict[str, Any]
+    tasks: List[Dict[str, Any]]
+    presence: List[Dict[str, Any]]
+    activities: List[Dict[str, Any]]
+    role: str
+    server_revision: int

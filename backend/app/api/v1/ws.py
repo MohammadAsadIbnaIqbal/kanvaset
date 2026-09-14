@@ -191,3 +191,140 @@ async def board_websocket_endpoint(
     except Exception as e:
         logger.exception("Unexpected error on websocket for board %s: %s", board_id, e)
         await manager.disconnect(board_id, client)
+
+@router.websocket("/ws/projects/{project_id}")
+async def project_websocket_endpoint(
+    websocket: WebSocket,
+    project_id: str,
+    token: Optional[str] = Query(None),
+):
+    token_str = token
+    if not token_str:
+        auth_header = websocket.headers.get("authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token_str = auth_header[7:]
+
+    if not token_str:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Missing auth token")
+        return
+
+    payload = decode_access_token(token_str)
+    if not payload or "sub" not in payload:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid auth token")
+        return
+
+    user_id = payload["sub"]
+
+    async with async_session_maker() as db:
+        user = await auth_service.get_user_by_id(db, user_id)
+        if not user or not user.is_active:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User unauthorized")
+            return
+
+        from backend.app.services.project_service import project_service
+        role = await project_service.check_project_access(db, project_id, user_id)
+        if not role:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Forbidden project access")
+            return
+
+        username = user.username
+        user_color = pick_color(user.id)
+
+    client = await manager.connect(
+        board_id=project_id,  # Using project_id as room ID
+        websocket=websocket,
+        user_id=user_id,
+        username=username,
+        role=role,
+        color=user_color,
+    )
+
+    try:
+        async with async_session_maker() as db:
+            snapshot_data = await project_service.get_project_snapshot(db, project_id, user_id)
+            snapshot_msg = WSMessage(
+                type=WSMessageType.SYNC_SNAPSHOT,
+                project_id=project_id,
+                server_revision=snapshot_data["server_revision"],
+                payload=snapshot_data
+            )
+            await websocket.send_text(json.dumps(snapshot_msg.model_dump()))
+
+        while True:
+            raw_text = await websocket.receive_text()
+            try:
+                data = json.loads(raw_text)
+                msg = WSMessage.model_validate(data)
+            except (json.JSONDecodeError, ValidationError) as e:
+                err_msg = WSMessage(
+                    type=WSMessageType.ERROR,
+                    project_id=project_id,
+                    payload={"detail": f"Malformed WebSocket payload: {str(e)}"}
+                )
+                await websocket.send_text(json.dumps(err_msg.model_dump()))
+                continue
+
+            msg.project_id = project_id
+
+            if msg.type == WSMessageType.SYNC_REQUEST:
+                async with async_session_maker() as db:
+                    snapshot_data = await project_service.get_project_snapshot(db, project_id, user_id)
+                    snapshot_resp = WSMessage(
+                        type=WSMessageType.SYNC_SNAPSHOT,
+                        project_id=project_id,
+                        server_revision=snapshot_data["server_revision"],
+                        payload=snapshot_data
+                    )
+                    await websocket.send_text(json.dumps(snapshot_resp.model_dump()))
+                continue
+
+            if msg.type in [
+                WSMessageType.TASK_CREATED,
+                WSMessageType.TASK_UPDATED,
+                WSMessageType.TASK_DELETED,
+                WSMessageType.TASK_COMMENT_ADDED,
+            ]:
+                try:
+                    from backend.app.services.project_engine import project_engine
+                    async with async_session_maker() as db:
+                        broadcast_msg, err_detail = await project_engine.process_operation(
+                            db=db,
+                            msg=msg,
+                            user_id=user_id,
+                            user_name=username,
+                            role=role
+                        )
+                        if err_detail:
+                            err_resp = WSMessage(
+                                type=WSMessageType.ERROR,
+                                project_id=project_id,
+                                operation_id=msg.operation_id,
+                                payload={"detail": err_detail}
+                            )
+                            await websocket.send_text(json.dumps(err_resp.model_dump()))
+                        elif broadcast_msg:
+                            await db.commit()
+                            await manager.broadcast_global(project_id, broadcast_msg.model_dump())
+
+                            ack_resp = WSMessage(
+                                type=WSMessageType.ACK,
+                                project_id=project_id,
+                                operation_id=msg.operation_id,
+                                server_revision=broadcast_msg.server_revision,
+                            )
+                            await websocket.send_text(json.dumps(ack_resp.model_dump()))
+                except Exception as op_err:
+                    logger.exception("Error processing operation %s: %s", msg.operation_id, op_err)
+                    err_resp = WSMessage(
+                        type=WSMessageType.ERROR,
+                        project_id=project_id,
+                        operation_id=msg.operation_id,
+                        payload={"detail": f"Operation processing error: {str(op_err)}"}
+                    )
+                    await websocket.send_text(json.dumps(err_resp.model_dump()))
+
+    except WebSocketDisconnect:
+        await manager.disconnect(project_id, client)
+    except Exception as e:
+        logger.exception("Unexpected error on websocket for project %s: %s", project_id, e)
+        await manager.disconnect(project_id, client)

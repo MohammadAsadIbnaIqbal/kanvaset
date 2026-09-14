@@ -1,0 +1,326 @@
+CURRENT PRODUCT SPECIFICATION — BETA → PRODUCT EVOLUTION
+This is the current source of truth for Kanvaset. The initial beta was already implemented from the previous specification. Do not discard or rebuild the beta from scratch. Treat the existing beta as the foundation and evolve it incrementally according to this document.
+Product direction: Kanvaset is now a real-time collaborative project workspace centered on projects, tasks, task assignments, activity, and version history. The existing WebSocket collaboration, presence, authorization, persistence, and board/canvas work should be reused wherever practical.
+Official product name: Kanvaset
+Product descriptor: Real-Time Collaborative Project Workspace
+GitHub repository: kanvaset
+Migration principle: preserve working beta functionality unless it conflicts with the updated direction; prefer incremental changes over unnecessary rewrites.
+Official NamingProduct name: KanvasetProduct descriptor: Real-Time Collaborative Project WorkspaceGitHub repository: kanvasetSuggested repository title: KanvasetSuggested repository description: A production-oriented real-time collaborative workspace built with React, FastAPI, WebSockets, PostgreSQL, and Redis.
+Kanvaset — Real-Time Collaborative Project Workspace
+Product & Engineering Specification
+Purpose: This document defines the intended product, scope, architecture, features, engineering objectives, and implementation priorities for a portfolio-quality real-time collaborative application. It is intended to be a source of truth for human developers and AI coding agents.
+1. Project Objective
+Build a focused collaborative workspace/whiteboard where multiple authenticated users can work on the same board simultaneously. Changes made by one user should appear to other connected users in near real time. The project should demonstrate WebSockets, asynchronous backend programming, shared-state management, concurrency, persistence, authorization, and production-oriented engineering.
+This is NOT intended to be a full Figma, Miro, or Google Docs clone. The goal is a smaller, well-engineered product whose difficult parts are real-time synchronization and shared state.
+2. Product Concept
+Users create workspaces and boards. A board contains simple visual objects such as text boxes, sticky notes, rectangles, connectors, and other lightweight elements. Multiple users can open the same board and edit it concurrently.
+User signs in.
+User creates or opens a workspace.
+User creates or opens a board.
+User invites another user or shares the board.
+Both users open the same board.
+Each user can create, move, edit, resize, or delete objects.
+Changes are propagated to other connected clients in near real time.
+Users can see who else is currently present.
+Board state is persisted so it remains available after disconnecting.
+3. Primary Engineering Objectives
+Implement reliable WebSocket communication between browser clients and a FastAPI backend.
+Design a clear shared-state model for collaborative boards.
+Handle concurrent edits without corrupting or permanently desynchronizing board state.
+Persist board state in PostgreSQL.
+Support authentication and board-level authorization.
+Use Redis where it provides a clear architectural benefit, especially presence/pub-sub or multi-instance scaling.
+Use asynchronous Python/FastAPI patterns appropriately.
+Keep real-time transport, persistence, and collaboration logic reasonably separated.
+Make the project deployable and demonstrable rather than leaving it as a local prototype.
+4. Recommended Technology Stack
+Layer
+Preferred
+Purpose
+Frontend
+React + TypeScript
+Interactive board UI and client state
+Board UI
+HTML Canvas or suitable React canvas library
+Render/manipulate board objects
+Backend
+Python + FastAPI
+REST API, auth, WebSockets
+Database
+PostgreSQL
+Users, boards, objects, permissions
+Realtime
+FastAPI WebSockets
+Live client-server communication
+Cache/Pub-Sub
+Redis
+Presence, pub/sub, multi-instance support
+ORM/Validation
+SQLAlchemy + Pydantic
+Database access and typed models
+Auth
+JWT or secure cookie-based sessions
+Authentication/authorization
+Deployment
+Docker + Docker Compose
+Reproducible environments
+Testing
+Pytest + frontend test framework
+Backend/API/collaboration tests
+The exact frontend/canvas library may change. The backend should operate on logical board operations/state rather than pixels.
+5. MVP Scope
+5.1 Authentication
+Register and log in.
+Secure password handling.
+Authenticated REST API access.
+Authenticated WebSocket connection.
+5.2 Workspaces and Boards
+Create workspace.
+Create/list/open boards.
+Rename/delete boards with authorization.
+5.3 Board Objects
+Create, move, edit, resize, and delete objects.
+Support basic text/shape properties.
+Use stable IDs for every object.
+5.4 Real-Time Collaboration
+Multiple clients connect to the same board through WebSockets.
+Broadcast relevant operations to other connected clients.
+Apply remote operations without page refresh.
+Handle connect/disconnect cleanly.
+5.5 Persistence
+Persist boards and objects in PostgreSQL.
+Load current state when opening a board.
+Persist accepted collaborative changes.
+5.6 Basic Presence
+Show currently connected users.
+Remove users from presence after disconnect/timeout.
+6. Collaboration Model
+Prefer semantic operations/events over repeatedly sending the entire board. For example, moving an object should send an operation such as OBJECT_MOVED rather than serializing the whole board after every mouse event.
+OBJECT_CREATED
+OBJECT_UPDATED
+OBJECT_MOVED
+OBJECT_RESIZED
+OBJECT_DELETED
+USER_JOINED
+USER_LEFT
+CURSOR_MOVED (polished version)
+Operations should contain enough information for validation, authorization, ordering, application, and debugging. Use explicit operation IDs and/or revision numbers.
+7. Concurrency and Conflict Handling
+This is a central engineering objective. The application must explicitly define what happens when two users modify the same object close together in time.
+Do not silently overwrite state without a defined ordering rule.
+Validate that the user can modify the board.
+Maintain a consistent server-side representation of accepted operations.
+Allow clients to recover if they miss an update.
+Use operation IDs/version numbers to detect duplicates or stale operations.
+For the advanced version, evaluate a CRDT such as Yjs/Automerge if appropriate.
+CRDTs are optional for the first version. Do not add CRDT complexity before basic WebSocket synchronization is correct and testable.
+8. Real-Time Connection Lifecycle
+Client authenticates.
+Client opens a WebSocket for a board.
+Server authenticates the connection and checks board access.
+Server sends the current board snapshot/state.
+Client enters presence.
+Client sends semantic operations as the user edits.
+Server validates and applies accepted operations.
+Server broadcasts accepted operations to other authorized clients.
+Server persists changes.
+On disconnect, the server removes the user from presence.
+On reconnect, the client resynchronizes safely.
+9. Presence and Live Cursors
+Show currently connected users.
+Show a name/avatar or identifier for active users.
+Show live cursors for other users in the polished version.
+Throttle cursor updates to avoid flooding the server.
+Treat cursor position as ephemeral state rather than persistent board data.
+10. Sharing and Authorization
+Every REST request and WebSocket connection must enforce board-level authorization.
+Recommended roles:
+OWNER — full control
+EDITOR — can modify board
+VIEWER — can view but not modify
+Recommended flow: Owner selects Share → selects a user → chooses a role → access is stored.
+11. Conceptual Data Model
+User: id, email/username, password hash, profile fields, timestamps.
+Workspace: id, name, owner, timestamps.
+WorkspaceMember: workspace, user, role.
+Board: id, workspace, name, timestamps, revision metadata.
+BoardMember (if board-specific sharing is needed): board, user, role.
+BoardObject: id, board, type, position, dimensions, content/properties, timestamps.
+Optional BoardOperation: operation ID, board ID, actor, operation type, payload, revision/timestamp.
+12. Conceptual API Surface
+POST /auth/register
+POST /auth/login
+GET /me
+POST /workspaces
+GET /workspaces
+POST /workspaces/{workspace_id}/boards
+GET /workspaces/{workspace_id}/boards
+GET /boards/{board_id}
+PATCH /boards/{board_id}
+DELETE /boards/{board_id}
+POST /boards/{board_id}/members
+GET /boards/{board_id}/members
+WebSocket /ws/boards/{board_id}
+Exact endpoint names may change; keep the API resource-oriented and consistent.
+13. WebSocket Message Design
+Use a typed, versionable message envelope. Illustrative example:
+{  "type": "OBJECT_MOVED",  "operation_id": "...",  "board_id": "...",  "object_id": "...",  "payload": {"x": 400, "y": 220},  "client_revision": 42}
+The exact schema is implementation-dependent, but messages must be typed, validated, traceable, and safe to evolve.
+14. Reliability Requirements
+Disconnected users must not remain permanently visible as online.
+Reconnecting clients must be able to obtain a consistent current state.
+Duplicate messages must not create duplicate persistent objects.
+Unauthorized users must not receive board data through WebSockets.
+Malformed WebSocket messages must be rejected safely.
+One client's failure must not terminate other board connections.
+Database failures must not be reported as successful operations.
+Logs should contain enough context to investigate synchronization problems.
+15. Advanced Version
+Redis Pub/Sub so multiple FastAPI instances can broadcast board events.
+Horizontal WebSocket scaling.
+CRDT-based conflict resolution.
+Operation history/audit log.
+Undo/redo.
+Board snapshots/version history.
+Comments or lightweight annotations.
+Offline/local editing followed by synchronization.
+Rate limiting for high-frequency operations.
+Metrics for active connections, message rate, latency, and failures.
+16. Performance Strategy
+Do not send the entire board for every small change.
+Send semantic operations for edits.
+Throttle high-frequency cursor/mouse events.
+Batch or debounce appropriate persistence operations.
+Use database transactions for state changes that must be atomic.
+Use Redis/pub-sub when it solves a real scaling requirement.
+Measure WebSocket latency and message throughput.
+17. Testing Requirements
+Backend tests:
+Authentication and authorization.
+Board CRUD.
+Object operations.
+WebSocket connection and authentication.
+Unauthorized WebSocket access.
+Concurrent operations.
+Reconnect/resynchronization.
+Database/error paths.
+Frontend tests:
+Board rendering where practical.
+Local edit behavior.
+Remote operation application.
+Connection/reconnection behavior.
+Critical demonstration test: connect two or more clients to one board, perform overlapping operations, and verify that all clients eventually reach the expected state.
+18. Security Requirements
+Never store plaintext passwords.
+Authenticate WebSocket connections.
+Authorize every board operation server-side.
+Validate all REST and WebSocket payloads.
+Never trust client-supplied ownership/role information.
+Keep secrets in environment variables.
+Rate-limit authentication and high-frequency endpoints where appropriate.
+Do not expose internal exception details to clients.
+19. Deployment & Production Quality
+Dockerized application.
+PostgreSQL.
+Redis where required.
+Environment-based configuration.
+Database migrations.
+Automated tests in CI.
+CI/CD pipeline.
+Error monitoring such as Sentry.
+Structured logging.
+Health/readiness endpoint.
+Live deployed demo.
+20. Portfolio Demonstration
+Open the same board in two browser windows/accounts.
+Move/create/edit an object in Window A and show it appear in Window B.
+Show live presence/cursors.
+Demonstrate simultaneous edits.
+Disconnect and reconnect one client.
+Refresh and show persisted board state.
+Demonstrate authorization with an unauthorized user.
+Show the architecture diagram and explain the WebSocket flow.
+21. Explicit Non-Goals
+Do not recreate the full feature set of Figma/Miro/Google Docs.
+Do not build a complex graphics editor.
+Do not add dozens of object types before collaboration works reliably.
+Do not introduce CRDTs merely for buzzword value.
+Do not optimize for massive scale before measuring the MVP.
+Do not prioritize visual polish over correct real-time synchronization.
+UPDATED PRODUCT DIRECTION
+Kanvaset should allow teams to create projects, organize work into tasks, assign tasks to members, collaborate in real time, see changes immediately, and inspect or restore meaningful previous versions of task/project data.
+The product should feel like a focused, technically sophisticated collaborative work-management system—not a generic Jira/Monday/Trello clone and not merely a whiteboard demonstration.
+CORE PRODUCT MODEL
+Project → Tasks → Collaboration → Activity → Version History
+Projects contain members and tasks. Tasks support title, description, status, priority, assignee, due date, tags, timestamps, and comments. Meaningful mutations are synchronized in real time and recorded in history.
+UPDATED MVP SCOPE
+1. Projects: create/edit projects, manage members, and enforce project-level access.
+2. Tasks: create, edit, assign, change status/priority, set due dates, add tags, and comment.
+3. Real-time collaboration: task creation, updates, deletion, assignment, status changes, comments where supported, and member/presence changes should propagate through WebSockets without page refreshes.
+4. Presence: retain the beta's live-user/presence functionality where available.
+5. Version history: maintain an auditable history of meaningful task changes, including revision/version, actor, timestamp, and changed state or structured diff.
+6. Version restore: restoring an older version must create a new version; never silently erase history.
+7. Activity feed: show important project events such as task creation, assignment, status changes, and priority changes.
+8. Authorization: keep server-side permission enforcement. Suggested roles: OWNER, ADMIN, MEMBER, VIEWER.
+9. Background work: use the existing Redis/worker infrastructure for real asynchronous needs such as notifications or email; do not add complexity without a use case.
+CONCURRENCY AND CONSISTENCY
+The server remains the authority for shared state. Prefer entity/field-level mutations over replacing the whole shared board/project state. Use revisions/version checks or optimistic concurrency so stale clients cannot silently overwrite newer state.
+Do not introduce CRDTs merely for complexity. Add them only if later requirements genuinely justify them.
+EXISTING BETA / CANVAS FUNCTIONALITY
+Do not automatically remove the completed collaborative canvas/board functionality. It can remain as a project visualization surface or be gradually adapted into the task workspace. Reuse its working synchronization, WebSocket, presence, authorization, and persistence components.
+RECOMMENDED CORE DATA MODEL
+User, Project, ProjectMember, Task, TaskComment, TaskVersion, Activity, and optionally Notification.
+A separate TaskAssignment table is optional. Use it only if multiple assignees are actually required; otherwise a single assignee relationship is sufficient.
+SCOPE BOUNDARY
+Do not turn Kanvaset into a full Jira, Monday.com, Asana, or enterprise PM clone. Do not add sprints, Gantt charts, advanced resource planning, time tracking, complex analytics, or large enterprise workflow systems unless explicitly requested later.
+UPDATED IMPLEMENTATION ORDER
+1. Inspect and understand the completed beta.
+2. Preserve working authentication, WebSocket, persistence, authorization, and deployment functionality.
+3. Introduce/refine Project and ProjectMember.
+4. Introduce/refine Task CRUD and task fields.
+5. Add assignment, status, priority, due date, and comments.
+6. Connect task mutations to WebSocket events.
+7. Add activity/audit records.
+8. Implement TaskVersion history and version inspection.
+9. Implement safe restore-as-new-version.
+10. Strengthen concurrency/revision handling.
+11. Add justified notifications/background processing.
+12. Test, document, deploy, and polish the portfolio demonstration.
+INSTRUCTION TO THE AI CODING AGENT
+The previous beta is valuable existing work and must be treated as the starting point. Before changing architecture, inspect the existing implementation and identify which requirements are already satisfied.
+Do not rebuild working components merely to match this document. Adapt the current implementation where possible. When a requirement conflicts with the beta, make the smallest safe change that moves the system toward this updated product model.
+Do not interpret this update as permission to add every possible project-management feature. The intended product is a focused real-time collaborative project workspace with tasks, assignments, activity, and version history.
+Engineering depth should come from correctness, real-time synchronization, authorization, consistency, versioning, testing, and maintainability—not from feature count.
+22. Definition of Done
+Two authenticated users can access the same board.
+Both users can edit the board simultaneously.
+Changes appear in near real time.
+Board state is persisted.
+Reconnects recover the correct state.
+Unauthorized users cannot access or modify protected boards.
+Concurrency/conflict behavior is defined, implemented, and tested.
+Critical collaboration paths have automated tests.
+The project is Dockerized and deployable.
+The repository has architecture documentation and a clear README.
+A live demo or recording makes the real-time behavior obvious.
+23. Suggested Build Order
+Phase 1 — Foundation: Project structure, database, migrations, authentication, workspace/board CRUD.
+Phase 2 — Board: Canvas/board UI, object model, create/edit/move/delete objects, REST persistence.
+Phase 3 — WebSockets: Authenticated board WebSocket, connection manager, operation messages, broadcasting.
+Phase 4 — Synchronization: Initial board snapshot, remote operations, reconnect handling, revisions/operation IDs.
+Phase 5 — Presence: Connected users, disconnect handling, live cursors with throttling.
+Phase 6 — Concurrency: Define conflict semantics, add tests, improve ordering/idempotency, optionally evaluate CRDTs.
+Phase 7 — Production: Redis scaling if needed, logging, monitoring, rate limits, Docker, CI/CD, deployment.
+Phase 8 — Portfolio Polish: README, architecture diagram, screenshots, demo video, engineering case study.
+24. Guidance for an AI Coding Agent
+Treat this document as the product and engineering specification. Do not invent unrelated features or expand scope automatically. Implement incrementally and keep the architecture understandable. Before adding advanced technology, identify the engineering problem it solves. Prefer a simple correct implementation over premature complexity.
+Do not remove requirements to make implementation easier.
+Do not fake real-time behavior with polling when WebSockets are required.
+Do not implement collaboration only on the frontend; the server must validate and coordinate shared state.
+Do not trust client-side authorization.
+Write tests alongside critical backend features.
+Keep domain logic separate from transport code where practical.
+Document significant architecture decisions.
+After each phase, ensure the application remains runnable before continuing.
+25. One-Sentence Project Definition
+A production-oriented real-time collaborative project workspace built with React and Python/FastAPI where authenticated users manage projects and tasks together through WebSockets, with persistent shared state, task assignment, presence, authorization, activity tracking, concurrency handling, version history, testing, and deployment.

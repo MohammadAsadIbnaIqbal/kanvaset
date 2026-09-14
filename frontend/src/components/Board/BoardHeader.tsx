@@ -8,7 +8,7 @@ interface BoardHeaderProps {
   revision: number;
   connectionStatus: ConnectionStatus;
   presence: PresenceUser[];
-  role: "OWNER" | "EDITOR" | "VIEWER";
+  role: "OWNER" | "EDITOR" | "VIEWER" | "ADMIN" | "MEMBER";
   onBack: () => void;
   onOpenShare: () => void;
   onExport: (format: "json" | "png") => void;
@@ -17,7 +17,7 @@ interface BoardHeaderProps {
 
 export const BoardHeader: React.FC<BoardHeaderProps> = ({
   title,
-  revision,
+  
   connectionStatus,
   presence,
   role,
@@ -123,9 +123,7 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
             }`}
           />
           <span className="capitalize hidden sm:inline">{connectionStatus}</span>
-          <span className="text-[10px] text-slate-400 pl-1 border-l border-slate-700">
-            r{revision}
-          </span>
+          
         </div>
 
         {/* Presence Avatars */}

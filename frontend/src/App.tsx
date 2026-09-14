@@ -1,42 +1,14 @@
-import React, { useState } from "react";
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from "react-router-dom";
 import { AuthPage } from "./components/Auth/AuthPage";
 import { BoardPage } from "./components/Board/BoardPage";
 import { DashboardPage } from "./components/Dashboard/DashboardPage";
 import { Navbar } from "./components/Navbar";
+import { ProjectPage } from "./components/Project/ProjectPage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 
-const MainApp: React.FC = () => {
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
-  const [activeBoardId, setActiveBoardId] = useState<string | null>(() => {
-    if (typeof window !== "undefined" && window.location.hash.startsWith("#board=")) {
-      return window.location.hash.replace("#board=", "");
-    }
-    return null;
-  });
-
-  const handleSelectBoard = (boardId: string | null) => {
-    setActiveBoardId(boardId);
-    if (typeof window !== "undefined") {
-      if (boardId) {
-        window.location.hash = `board=${boardId}`;
-      } else {
-        history.pushState("", document.title, window.location.pathname + window.location.search);
-      }
-    }
-  };
-
-  React.useEffect(() => {
-    const handleHashChange = () => {
-      if (window.location.hash.startsWith("#board=")) {
-        setActiveBoardId(window.location.hash.replace("#board=", ""));
-      } else {
-        setActiveBoardId(null);
-      }
-    };
-    window.addEventListener("hashchange", handleHashChange);
-    return () => window.removeEventListener("hashchange", handleHashChange);
-  }, []);
-
   if (loading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-slate-950 text-slate-400">
@@ -47,24 +19,27 @@ const MainApp: React.FC = () => {
       </div>
     );
   }
-
   if (!user) {
     return <AuthPage />;
   }
+  return <>{children}</>;
+};
 
-  if (activeBoardId) {
-    return (
-      <BoardPage
-        boardId={activeBoardId}
-        onBack={() => handleSelectBoard(null)}
-      />
-    );
-  }
+const BoardRoute = () => {
+  const { boardId } = useParams();
+  const navigate = useNavigate();
+  return <BoardPage boardId={boardId!} onBack={() => navigate("/")} />;
+};
 
+const MainApp: React.FC = () => {
+  const navigate = useNavigate();
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-950 overflow-hidden">
       <Navbar />
-      <DashboardPage onSelectBoard={(boardId) => handleSelectBoard(boardId)} />
+      <DashboardPage 
+        onSelectBoard={(boardId) => navigate(`/board/${boardId}`)} 
+        onSelectProject={(projectId) => navigate(`/project/${projectId}`)}
+      />
     </div>
   );
 };
@@ -72,7 +47,14 @@ const MainApp: React.FC = () => {
 export default function App() {
   return (
     <AuthProvider>
-      <MainApp />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<ProtectedRoute><MainApp /></ProtectedRoute>} />
+          <Route path="/board/:boardId" element={<ProtectedRoute><BoardRoute /></ProtectedRoute>} />
+          <Route path="/project/:projectId" element={<ProtectedRoute><ProjectPage /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </BrowserRouter>
     </AuthProvider>
   );
 }

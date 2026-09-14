@@ -15,7 +15,7 @@ export function useWebSocketBoard({ boardId, token, currentUser }: UseWebSocketB
   const [objects, setObjects] = useState<Record<string, BoardObject>>({});
   const [presence, setPresence] = useState<Record<string, PresenceUser>>({});
   const [cursors, setCursors] = useState<Record<string, { x: number; y: number; username: string; color: string }>>({});
-  const [role, setRole] = useState<"OWNER" | "EDITOR" | "VIEWER">("EDITOR");
+  const [role, setRole] = useState<"OWNER" | "EDITOR" | "VIEWER" | "ADMIN" | "MEMBER">("EDITOR");
   const [serverRevision, setServerRevision] = useState<number>(0);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
   const [lastError, setLastError] = useState<string | null>(null);
@@ -190,7 +190,7 @@ export function useWebSocketBoard({ boardId, token, currentUser }: UseWebSocketB
 
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const isDev = typeof window !== "undefined" && window.location.port === "5173";
-      const host = isDev ? "127.0.0.1:8000" : window.location.host;
+      const host = isDev ? "127.0.0.1:8080" : window.location.host;
       const wsUrl = `${protocol}//${host}/ws/boards/${boardId}?token=${token}`;
 
       const ws = new WebSocket(wsUrl);
@@ -264,7 +264,7 @@ export function useWebSocketBoard({ boardId, token, currentUser }: UseWebSocketB
             }
 
             case "CURSOR_MOVED": {
-              const uid = msg.user_id;
+              const uid = msg.user_id || msg.payload?.user_id;
               if (uid && uid !== currentUser?.id) {
                 setCursors((prev) => ({
                   ...prev,

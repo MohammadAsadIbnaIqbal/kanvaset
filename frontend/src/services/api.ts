@@ -3,7 +3,7 @@ import type { Board, BoardMember, Workspace } from "../types/board";
 
 const API_BASE =
   typeof window !== "undefined" && window.location.port === "5173"
-    ? "http://127.0.0.1:8000/api/v1"
+    ? "http://127.0.0.1:8080/api/v1"
     : "/api/v1";
 
 export class ApiError extends Error {
@@ -158,5 +158,49 @@ export const api = {
     return request<void>(`/boards/${boardId}/members/${userId}`, {
       method: "DELETE",
     });
+  },
+
+  // Projects
+  async getWorkspaceProjects(workspaceId: string): Promise<any[]> {
+    return request<any[]>(`/workspaces/${workspaceId}/projects`);
+  },
+
+  async createProject(workspaceId: string, name: string, description?: string): Promise<any> {
+    return request<any>(`/workspaces/${workspaceId}/projects`, {
+      method: "POST",
+      body: JSON.stringify({ name, description }),
+    });
+  },
+
+  async getProject(projectId: string): Promise<any> {
+    return request<any>(`/projects/${projectId}`);
+  },
+
+  async addProjectMember(projectId: string, userQuery: string, role: string): Promise<any> {
+    return request<any>(`/projects/${projectId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ user_email_or_username: userQuery, role }),
+    });
+  },
+
+  async getProjectMembers(projectId: string): Promise<any[]> {
+    return request<any[]>(`/projects/${projectId}/members`);
+  },
+
+  async updateProjectMember(projectId: string, userId: string, role: string): Promise<any> {
+    return request<any>(`/projects/${projectId}/members/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    });
+  },
+
+  async removeProjectMember(projectId: string, userId: string): Promise<void> {
+    return request<void>(`/projects/${projectId}/members/${userId}`, {
+      method: "DELETE",
+    });
+  },
+
+  async getTaskHistory(projectId: string, taskId: string): Promise<any[]> {
+    return request<any[]>(`/projects/${projectId}/tasks/${taskId}/history`);
   },
 };

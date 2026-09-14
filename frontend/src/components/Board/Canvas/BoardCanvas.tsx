@@ -5,7 +5,7 @@ import type { ToolType } from "../Toolbar";
 interface BoardCanvasProps {
   objects: BoardObject[];
   cursors: Record<string, { x: number; y: number; username: string; color: string }>;
-  role: "OWNER" | "EDITOR" | "VIEWER";
+  role: "OWNER" | "EDITOR" | "VIEWER" | "ADMIN" | "MEMBER";
   activeTool: ToolType;
   selectedColor: string;
   zoom: number;
@@ -327,7 +327,7 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
     }
     textUpdateTimeoutRef.current = setTimeout(() => {
       onUpdateObject(objId, { text: newText });
-    }, 200);
+    }, 10);
   };
 
   const handleTextBlur = (objId: string) => {
@@ -381,13 +381,21 @@ export const BoardCanvas: React.FC<BoardCanvasProps> = ({
           const isSelected = selectedObjectId === obj.id;
           const isEditing = editingId === obj.id;
 
+          let renderX = obj.x;
+          let renderY = obj.y;
+
+          if (isDraggingObject && isSelected && currentDragPosRef.current) {
+            renderX = currentDragPosRef.current.x;
+            renderY = currentDragPosRef.current.y;
+          }
+
           return (
             <div
               key={obj.id}
               onMouseDown={(e) => handleObjectMouseDown(e, obj)}
               onDoubleClick={(e) => handleObjectDoubleClick(e, obj)}
               style={{
-                transform: `translate(${obj.x}px, ${obj.y}px) rotate(${obj.rotation || 0}deg)`,
+                transform: `translate(${renderX}px, ${renderY}px) rotate(${obj.rotation || 0}deg)`,
                 width: `${obj.width}px`,
                 height: `${obj.height}px`,
                 zIndex: obj.z_index ?? 1,

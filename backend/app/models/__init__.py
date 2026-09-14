@@ -15,3 +15,7 @@ __all__ = [
     "BoardObject",
     "BoardOperation",
 ]
+
+from backend.app.models.project import Project, ProjectMember
+from backend.app.models.task import Task, TaskComment
+from backend.app.models.history import TaskVersion, Activity

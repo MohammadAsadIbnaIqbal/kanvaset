@@ -24,3 +24,5 @@ class User(Base):
     workspaces_owned = relationship("Workspace", back_populates="owner", cascade="all, delete-orphan")
     workspace_memberships = relationship("WorkspaceMember", back_populates="user", cascade="all, delete-orphan")
     board_memberships = relationship("BoardMember", back_populates="user", cascade="all, delete-orphan")
+
+    project_memberships = relationship("ProjectMember", back_populates="user", cascade="all, delete-orphan")

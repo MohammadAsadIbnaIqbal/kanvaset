@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from "react";
-import { Folder, FolderPlus, Layout, Plus, Share2, Trash2, Users } from "lucide-react";
+import { Folder, FolderPlus, Layout, Plus, Share2, Trash2, Users, Kanban } from "lucide-react";
 import { api } from "../../services/api";
 import type { Board, Workspace } from "../../types/board";
 
 interface DashboardPageProps {
   onSelectBoard: (boardId: string) => void;
+  onSelectProject?: (projectId: string) => void;
 }
 
-export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectBoard }) => {
+export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectBoard, onSelectProject }) => {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWs, setSelectedWs] = useState<Workspace | null>(null);
   const [boards, setBoards] = useState<Board[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
   const [sharedBoards, setSharedBoards] = useState<Board[]>([]);
   const [activeTab, setActiveTab] = useState<"workspace" | "shared">("workspace");
   const [loading, setLoading] = useState(true);
@@ -21,6 +23,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectBoard }) =
   const [showNewBoardModal, setShowNewBoardModal] = useState(false);
   const [newBoardName, setNewBoardName] = useState("");
   const [newBoardDesc, setNewBoardDesc] = useState("");
+  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectDesc, setNewProjectDesc] = useState("");
 
   const loadData = async () => {
     try {
@@ -62,16 +67,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectBoard }) =
   }, []);
 
   useEffect(() => {
-    async function loadBoards() {
+    async function loadWorkspaceData() {
       if (!selectedWs) return;
       try {
-        const bList = await api.getWorkspaceBoards(selectedWs.id);
+        const [bList, pList] = await Promise.all([
+          api.getWorkspaceBoards(selectedWs.id),
+          api.getWorkspaceProjects(selectedWs.id),
+        ]);
         setBoards(bList);
+        setProjects(pList);
       } catch (err) {
-        console.error("Failed to load boards:", err);
+        console.error("Failed to load workspace data:", err);
       }
     }
-    loadBoards();
+    loadWorkspaceData();
   }, [selectedWs]);
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {
@@ -99,6 +108,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectBoard }) =
       setShowNewBoardModal(false);
     } catch {
       alert("Failed to create board");
+    }
+  };
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedWs || !newProjectName.trim()) return;
+    try {
+      const p = await api.createProject(selectedWs.id, newProjectName.trim(), newProjectDesc.trim());
+      setProjects((prev) => [p, ...prev]);
+      setNewProjectName("");
+      setNewProjectDesc("");
+      setShowNewProjectModal(false);
+    } catch {
+      alert("Failed to create project");
     }
   };
 
@@ -229,79 +252,139 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectBoard }) =
                     {selectedWs.name}
                   </h1>
                   <p className="text-sm text-slate-400 mt-1">
-                    Manage whiteboards and real-time collaborative workspaces.
+                    Manage whiteboards and projects in your workspace.
                   </p>
                 </div>
 
-                <button
-                  onClick={() => setShowNewBoardModal(true)}
-                  className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/20 cursor-pointer transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>New Board</span>
-                </button>
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => setShowNewProjectModal(true)}
+                    className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-sm shadow-lg cursor-pointer transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>New Project</span>
+                  </button>
+                  <button
+                    onClick={() => setShowNewBoardModal(true)}
+                    className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/20 cursor-pointer transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>New Board</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Projects Grid */}
+              <div className="mt-8">
+                <h2 className="text-lg font-bold text-white mb-4">Projects</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {projects.map((p) => (
+                    <div
+                      key={p.id}
+                      onClick={() => onSelectProject && onSelectProject(p.id)}
+                      className="group bg-slate-900 border border-slate-800 hover:border-slate-500/50 rounded-2xl p-5 shadow-lg transition-all duration-200 cursor-pointer flex flex-col justify-between hover:-translate-y-0.5"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between">
+                          <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 group-hover:bg-slate-700 group-hover:text-white transition-colors">
+                            <Kanban className="w-5 h-5" />
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                              {p.role}
+                            </span>
+                          </div>
+                        </div>
+
+                        <h3 className="text-base font-semibold text-white mt-4 group-hover:text-slate-300 transition-colors">
+                          {p.name}
+                        </h3>
+                        <p className="text-xs text-slate-400 line-clamp-2 mt-1 min-h-[32px]">
+                          {p.description || "No description provided."}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+
+                  {projects.length === 0 && (
+                    <div className="col-span-full py-8 text-center border-2 border-dashed border-slate-800 rounded-2xl">
+                      <Kanban className="w-8 h-8 text-slate-600 mx-auto mb-3" />
+                      <h3 className="text-sm font-semibold text-slate-300">No projects yet</h3>
+                      <button
+                        onClick={() => setShowNewProjectModal(true)}
+                        className="mt-4 inline-flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold cursor-pointer transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Create Project</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Board Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
-                {boards.map((b) => (
-                  <div
-                    key={b.id}
-                    onClick={() => onSelectBoard(b.id)}
-                    className="group bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-5 shadow-lg transition-all duration-200 cursor-pointer flex flex-col justify-between hover:-translate-y-0.5"
-                  >
-                    <div>
-                      <div className="flex items-start justify-between">
-                        <div className="w-10 h-10 rounded-xl bg-indigo-600/15 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                          <Layout className="w-5 h-5" />
+              <div className="mt-8">
+                <h2 className="text-lg font-bold text-white mb-4">Whiteboards</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {boards.map((b) => (
+                    <div
+                      key={b.id}
+                      onClick={() => onSelectBoard(b.id)}
+                      className="group bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-5 shadow-lg transition-all duration-200 cursor-pointer flex flex-col justify-between hover:-translate-y-0.5"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between">
+                          <div className="w-10 h-10 rounded-xl bg-indigo-600/15 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                            <Layout className="w-5 h-5" />
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                              {b.role}
+                            </span>
+                            {b.role === "OWNER" && (
+                              <button
+                                onClick={(e) => handleDeleteBoard(b.id, e)}
+                                title="Delete Board"
+                                className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                            {b.role}
-                          </span>
-                          {b.role === "OWNER" && (
-                            <button
-                              onClick={(e) => handleDeleteBoard(b.id, e)}
-                              title="Delete Board"
-                              className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
+
+                        <h3 className="text-base font-semibold text-white mt-4 group-hover:text-indigo-400 transition-colors">
+                          {b.name}
+                        </h3>
+                        <p className="text-xs text-slate-400 line-clamp-2 mt-1 min-h-[32px]">
+                          {b.description || "No description provided."}
+                        </p>
                       </div>
 
-                      <h3 className="text-base font-semibold text-white mt-4 group-hover:text-indigo-400 transition-colors">
-                        {b.name}
-                      </h3>
-                      <p className="text-xs text-slate-400 line-clamp-2 mt-1 min-h-[32px]">
-                        {b.description || "No description provided."}
+                      <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-500">
+                        <span>Revision: {b.revision}</span>
+                        <span>{b.objects_count ?? 0} objects</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {boards.length === 0 && (
+                    <div className="col-span-full py-16 text-center border-2 border-dashed border-slate-800 rounded-2xl">
+                      <Layout className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                      <h3 className="text-base font-semibold text-slate-300">No boards yet</h3>
+                      <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                        Create your first board to start drawing, brainstorming, and collaborating in real time.
                       </p>
+                      <button
+                        onClick={() => setShowNewBoardModal(true)}
+                        className="mt-4 inline-flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 text-xs font-semibold cursor-pointer transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Create Board</span>
+                      </button>
                     </div>
-
-                    <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-500">
-                      <span>Revision: {b.revision}</span>
-                      <span>{b.objects_count ?? 0} objects</span>
-                    </div>
-                  </div>
-                ))}
-
-                {boards.length === 0 && (
-                  <div className="col-span-full py-16 text-center border-2 border-dashed border-slate-800 rounded-2xl">
-                    <Layout className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                    <h3 className="text-base font-semibold text-slate-300">No boards yet</h3>
-                    <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                      Create your first board to start drawing, brainstorming, and collaborating in real time.
-                    </p>
-                    <button
-                      onClick={() => setShowNewBoardModal(true)}
-                      className="mt-4 inline-flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 text-xs font-semibold cursor-pointer transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Create Board</span>
-                    </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           ) : (
@@ -471,6 +554,57 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectBoard }) =
                   className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer"
                 >
                   Create Board
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* New Project Modal */}
+      {showNewProjectModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-4">Create New Project</h3>
+            <form onSubmit={handleCreateProject} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">
+                  Project Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  placeholder="e.g. Q3 Roadmap"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">
+                  Description (Optional)
+                </label>
+                <textarea
+                  value={newProjectDesc}
+                  onChange={(e) => setNewProjectDesc(e.target.value)}
+                  placeholder="What is this project for?"
+                  rows={2}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
+                />
+              </div>
+              <div className="flex justify-end space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNewProjectModal(false)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:bg-slate-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer"
+                >
+                  Create Project
                 </button>
               </div>
             </form>
